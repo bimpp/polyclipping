@@ -5,7 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Drawing.Drawing2D;
 using ClipperLib;
-using CurvesLib;
+using ClipperMultiPathsLib;
 
 namespace Clipper_Lines_Demo
 {
@@ -17,21 +17,18 @@ namespace Clipper_Lines_Demo
   public partial class MainForm : Form
   {
 
-    const double scale = 5.0; //removes the blocky-ness associated with integer rounding.
-    const int btnRadius = 3 * (int)scale;
+    const int SUBJECT = 0, CLIP = 1;
+    const double scale = 10.0; //removes the blocky-ness associated with integer rounding.
+    const int btnRadius = (int)(3.0 * scale); //control button size
     bool LeftButtonPressed = false;
-    int MovingButton = -1;
-    
-    public Paths subjLines = new Paths();
-    public Paths subjCBeziers = new Paths();
-    public Paths subjQBeziers = new Paths();
-    public Paths subjArcs = new Paths();
-    public Paths subjPolygons = new Paths();
-    public Paths subjEllipses = new Paths();
-    public Paths clipPolygons = new Paths();
+    int MovingButtonIdx = -1;
+    MultiPathSegment MovingButtonSeg = null;
+
+    MultiPaths allPaths = new MultiPaths(0.5 * scale);
+
     public Bitmap bmp = null;
     public Graphics bmpGraphics = null;
-    
+
     public MainForm()
     {
       InitializeComponent();
@@ -53,67 +50,110 @@ namespace Clipper_Lines_Demo
     }
     //------------------------------------------------------------------------------
 
+    private CurveType GetRadiobuttonPathType()
+    {
+      if (rbSubjArc.Checked) return CurveType.Arc;
+      else if (rbSubjCBezier.Checked) return CurveType.CubicBezier;
+      else if (rbSubjQBezier.Checked) return CurveType.QuadBezier;
+      else if (rbSubjEllipses.Checked) return CurveType.EllipticalArc;
+      else return CurveType.Line;
+    }
+    //------------------------------------------------------------------------------
+
+    private CurveType GetCurrentPathType(MultiPath mp)
+    {
+      if (mp.Count == 0) return CurveType.Line;
+      else return mp[mp.Count - 1].curvetype;
+    }
+    //------------------------------------------------------------------------------
+
+    private MultiPath GetCurrentSubjMultiPath()
+    {
+      for (int i = allPaths.Count - 1; i >= 0; i--)
+        if (allPaths[i].RefID == SUBJECT) return allPaths[i];
+      return null;
+    }
+    //------------------------------------------------------------------------------
+
+    private MultiPath GetCurrentClipMultiPath()
+    {
+      for (int i = allPaths.Count - 1; i >= 0; i--)
+        if (allPaths[i].RefID == CLIP) return allPaths[i];
+      return null;
+    }
+    //------------------------------------------------------------------------------
+
     private void BmpUpdateNeeded()
     {
+      const int textOffset = 20;
+      
       if (bmpGraphics == null) return;
       FillMode fm = (mEvenOdd.Checked ? FillMode.Alternate : FillMode.Winding);
-      Paths ap = GetActivePaths();
       bmpGraphics.Clear(Color.White);
 
-      if (ap == subjCBeziers)
-        DrawCBezierCtrlLines(bmpGraphics, subjCBeziers, 0xFFEEEEEE);
-      else if (ap == subjQBeziers)
-        DrawQBezierCtrlLines(bmpGraphics, subjQBeziers, 0xFFEEEEEE);
-      DrawButtons(bmpGraphics, ap);
-
-      if (MovingButton >= 0)
-      {
-        //display coords of moving button ...
-        Font f = new Font("Arial", 8);
-        SolidBrush b = new SolidBrush(Color.Navy);
-        IntPoint ip = ap[ap.Count - 1][MovingButton];
-        ip.X = (int)(ip.X / scale) - 20; ip.Y = (int)(ip.Y / scale) - 20;
-        string coords = ip.X.ToString() + "," + ip.Y.ToString();
-        bmpGraphics.DrawString(coords, f, b, ip.X, ip.Y, null);
-        f.Dispose();
-        b.Dispose();
-      }
-
-      DrawPath(bmpGraphics, subjLines, false, 0x0, 0xFFAAAAAA, fm, 1.0);
-      DrawPath(bmpGraphics, subjPolygons, true, 0x20808080, 0xFFAAAAAA, fm, 1.0);
-      DrawPath(bmpGraphics, clipPolygons, true, 0x10FF6600, 0x99FF6600, fm, 1.0);
-
-      //CurveList - a container class that handles the 'flattening' of all curved paths 
-      //(defined by control point paths - eg beziers and arcs) and later de-flattening
-      //or reconstructing of control point paths from parts of (ie clipped) flattened 
-      //paths. The Z member of IntPoint stores info. used in reconstruction.
-      CurveList curves = null;
+      //draw the subject and clip paths ...
       Paths openPaths = new Paths();
       Paths closedPaths = new Paths();
+      Paths clipPaths = new Paths();
+      //sort the paths into open and closed subjects and (closed) clips ...
+      foreach (MultiPath mp2 in allPaths)
+        if (mp2.RefID == CLIP) clipPaths.Add(mp2.Flatten());
+        else if (mp2.IsClosed) closedPaths.Add(mp2.Flatten()); 
+        else openPaths.Add(mp2.Flatten());
 
-      //draw curves ...
-      if (subjCBeziers.Count > 0 || subjQBeziers.Count > 0 || subjArcs.Count > 0 || subjEllipses.Count > 0)
+      DrawPath(bmpGraphics, openPaths, false, 0x0, 0xFFAAAAAA, fm, 1.0);
+      DrawPath(bmpGraphics, closedPaths, true, 0x0, 0xFFAAAAAA, fm, 1.0);
+      DrawPath(bmpGraphics, clipPaths, true, 0x10FF6600, 0x99FF6600, fm, 1.0);
+
+      if (cbShowCoords.Checked)
       {
-        curves = new CurveList(0.5 * scale); //half pixel precision (accounting for scaling)
-        try
+        Font fnt = new Font("Arial", 8);
+        SolidBrush brush = new SolidBrush(Color.Navy);
+        foreach (MultiPath mp2 in allPaths)
         {
-          if (subjCBeziers.Count > 0)
-            curves.AddPaths(subjCBeziers, CurveType.CubicBezier);
-          if (subjQBeziers.Count > 0)
-            curves.AddPaths(subjQBeziers, CurveType.QuadBezier);
-          if (subjArcs.Count > 0)
-            curves.AddPaths(subjArcs, CurveType.Arc);
-          if (subjEllipses.Count > 0)
-            curves.AddPaths(subjEllipses, CurveType.Ellipse);
-          openPaths = curves.GetFlattenedPaths(PathType.Open);
-          DrawPath(bmpGraphics, openPaths, false, 0x0, 0xFFAAAAAA, fm, 1.0);
-          closedPaths = curves.GetFlattenedPaths(PathType.Closed);
-          DrawPath(bmpGraphics, closedPaths, true, 0x20808080, 0xFFAAAAAA, fm, 1.0);
+          foreach (MultiPathSegment mps in mp2)
+            foreach (IntPoint ip in mps)
+            {
+              IntPoint ip2 = new IntPoint(ip.X / scale, ip.Y / scale);
+              string coords = ip2.X.ToString() + "," + ip2.Y.ToString();
+              bmpGraphics.DrawString(coords, fnt, brush, ip2.X - textOffset, ip2.Y - textOffset, null);
+            }
         }
-        catch { curves = null; };
+        fnt.Dispose();
+        brush.Dispose();
       }
 
-      if (!mNone.Checked)
+      //for the active path, draw control buttons and control lines too ...
+      MultiPath activePath = GetActivePath();
+      if (activePath != null && activePath.Count > 0)
+      {
+        foreach (MultiPathSegment mps in activePath)
+        {
+          CurveType pt = mps.curvetype;
+          if (pt == CurveType.CubicBezier)
+            DrawBezierCtrlLines(bmpGraphics, mps, 0xFFEEEEEE);
+          else if (pt == CurveType.QuadBezier)
+            DrawBezierCtrlLines(bmpGraphics, mps, 0xFFEEEEEE);
+        }
+
+        DrawButtons(bmpGraphics, activePath);
+
+        //display the coords of a moving button ...
+        if (MovingButtonIdx >= 0)
+        {
+          Font f = new Font("Arial", 8);
+          SolidBrush b = new SolidBrush(Color.Navy);
+          IntPoint ip = MovingButtonSeg[MovingButtonIdx];
+          ip.X = (int)(ip.X / scale); ip.Y = (int)(ip.Y / scale);
+          string coords = ip.X.ToString() + "," + ip.Y.ToString();
+          bmpGraphics.DrawString(coords, f, b, ip.X - textOffset, ip.Y - textOffset, null);
+          f.Dispose();
+          b.Dispose();
+        }
+      }
+
+      //if there's any clipping to be done, do it here ...
+      if (!mNone.Checked && GetCurrentSubjMultiPath() != null && GetCurrentClipMultiPath() != null)
       {
         PolyFillType pft = (mEvenOdd.Checked ? PolyFillType.pftEvenOdd : PolyFillType.pftNonZero);
         ClipType ct;
@@ -124,53 +164,65 @@ namespace Clipper_Lines_Demo
 
         //CLIPPING DONE HERE ...
         Clipper c = new Clipper();
-        c.ZFillFunction = CurveList.ClipCallback; //callback function that's called at intersections
-        c.AddPaths(subjLines, PolyType.ptSubject, false);
-        c.AddPaths(openPaths, PolyType.ptSubject, false); //paths == flattened beziers
-        c.AddPaths(closedPaths, PolyType.ptSubject, true); //paths == flattened beziers
-        c.AddPaths(subjPolygons, PolyType.ptSubject, true);
-        c.AddPaths(clipPolygons, PolyType.ptClip, true);
+        c.ZFillFunction = MultiPaths.ClipCallback; //set the callback function (called at intersections)
+        if (openPaths.Count > 0)
+          c.AddPaths(openPaths, PolyType.ptSubject, false);
+        if (closedPaths.Count > 0)
+          c.AddPaths(closedPaths, PolyType.ptSubject, true);
+        c.AddPaths(clipPaths, PolyType.ptClip, true);
         PolyTree polytree = new PolyTree();
-        Paths solution;
-        c.Execute(ct, polytree, pft, pft); //EXECUTE CLIP
-        solution = Clipper.ClosedPathsFromPolyTree(polytree);
-        DrawPath(bmpGraphics, solution, true, 0x2033AA00, 0xFF33AA00, fm, 2.0);
-        solution = Clipper.OpenPathsFromPolyTree(polytree);
-        DrawPath(bmpGraphics, solution, false, 0x0, 0xFF33AA00, fm, 2.0);
 
-        Paths paths = new Paths();
+        Paths solution;
+        c.Execute(ct, polytree, pft, pft); //EXECUTE CLIP !!!!!!!!!!!!!!!!!!!!!!
+        solution = Clipper.ClosedPathsFromPolyTree(polytree);
+        if (!cbReconstCurve.Checked)
+          DrawPath(bmpGraphics, solution, true, 0x2033AA00, 0xFF33AA00, fm, 2.0);
+        solution = Clipper.OpenPathsFromPolyTree(polytree);
+        if (!cbReconstCurve.Checked)
+          DrawPath(bmpGraphics, solution, false, 0x0, 0xFF33AA00, fm, 2.0);
+
         //now to demonstrate reconstructing beziers & arcs ...
-        if (curves != null && cbReconstCurve.Checked)
+        if (cbReconstCurve.Checked)
         {
-          paths.Clear();
-          foreach (Path p in solution)
+          PolyNode pn = polytree.GetFirst();
+          while (pn != null)
           {
-            //nb: paths with p[x].Z == 0 aren't curves.
-            int cnt = p.Count;
-            if (cnt < 2 || p[0].Z == 0 || p[1].Z == 0) continue;
+            if (pn.IsHole || pn.Contour.Count < 2)
+            {
+              pn = pn.GetNext();
+              continue;
+            }
+            
+            if (pn.ChildCount > 0)
+              throw new Exception("Sorry, this demo doesn't currently handle holes");
+
             //and reconstruct each curve ...
-            Path ReconstructedCtrlPts = curves.Reconstruct(p[0], p[cnt - 1]);
-            CurveType curvetype = curves.GetCurveType(p[0]);
+            MultiPath reconstructedMultiPath = allPaths.Reconstruct(pn.Contour);
 
             if (cbShowCtrls.Enabled && cbShowCtrls.Checked)
             {
-              //show ReconstructedCtrlPts as (small) buttons too ...
-              Paths tmp = new Paths(1);
-              tmp.Add(ReconstructedCtrlPts);
-              if (curvetype == CurveType.CubicBezier)
-                DrawCBezierCtrlLines(bmpGraphics, tmp, 0xFFFFCCCC);
-              else if (curvetype == CurveType.QuadBezier)
-                DrawQBezierCtrlLines(bmpGraphics, tmp, 0xFFFFCCCC);
-              DrawButtons(bmpGraphics, tmp, true);
+              //show (small) buttons on the red reconstructed path too ...
+              DrawButtons(bmpGraphics, reconstructedMultiPath, true);
             }
-            paths.Add(ReconstructedCtrlPts);
-            //now flatten the reconstructed curves and draw them (red)
-            //to see if they're accurate ...
-            paths = CurveList.Flatten(paths, curvetype);
-            DrawPath(bmpGraphics, paths, false, 0x0, 0xFFFF0000, fm, 2.0);
-            paths.Clear();
+
+            //now to show how accurate these reconstructed (control) paths are,
+            //we flatten them (drawing them red) so we can compare them with 
+            //the original flattened paths (light gray) ...
+            Paths paths = new Paths();
+            paths.Add(reconstructedMultiPath.Flatten());
+            DrawPath(bmpGraphics, paths, !pn.IsOpen, 0x18FF0000, 0xFFFF0000, fm, 2.0);
+            
+            pn = pn.GetNext();
           }
         }
+        //else //shows just how many vertices there are in flattened paths ...
+        //{
+        //  solution = Clipper.PolyTreeToPaths(polytree);
+        //  MultiPath flatMultiPath = new MultiPath(null, 0, false);
+        //  foreach (Path p in solution)
+        //    flatMultiPath.NewMultiPathSegment(PathType.Line, p);
+        //  DrawButtons(bmpGraphics, flatMultiPath, true);
+        //}
       }
 
       string s = "  ";
@@ -207,7 +259,7 @@ namespace Clipper_Lines_Demo
     }
     //------------------------------------------------------------------------------
 
-    private static void ClipperPathToGraphicsPath(Path path, GraphicsPath gp, bool closed)
+    private static void IntPointsToGraphicsPath(Path path, GraphicsPath gp, bool closed)
     {
       if (path.Count == 0) return;
       PointF[] pts = new PointF[path.Count];
@@ -216,15 +268,34 @@ namespace Clipper_Lines_Demo
       {
         if (i > 0 && path[i] == path[j]) continue;
         j++;
-        pts[j].X = (float)(path[i].X / scale);
-        pts[j].Y = (float)(path[i].Y / scale);
+        pts[j] = PathToPointF(path[i]);
       }
       j++;
       if (j < path.Count) Array.Resize(ref pts, j);
       if (closed && j > 2)
       {
-          gp.AddPolygon(pts);
+        gp.AddPolygon(pts);
       }
+      else
+      {
+        gp.StartFigure();
+        gp.AddLines(pts);
+      }
+    }
+    //------------------------------------------------------------------------------
+
+    private static void DoublePointsToGraphicsPath(List<DoublePoint> path, GraphicsPath gp, bool closed)
+    {
+      if (closed && path.Count < 2) return;
+      else if (!closed && path.Count < 3) return;
+
+      PointF[] pts = new PointF[path.Count];
+      for (int i = 0; i < path.Count; ++i)
+      {
+        pts[i] = new PointF((float)(path[i].X / scale), (float)(path[i].Y / scale));
+      }
+      if (closed)
+        gp.AddPolygon(pts);
       else
       {
         gp.StartFigure();
@@ -238,36 +309,24 @@ namespace Clipper_Lines_Demo
       float d1 = (small ? 3 : 4), d2 = (small ? 1.0f : 1.5f);
       PointF[] btnPts = new PointF[8];
       Path p = new Path(8);
-      float x = (float)ip.X;
-      float y = (float)ip.Y;
-      btnPts[0] = new PointF((float)(x / scale - d2), (float)(y / scale - d1));
-      btnPts[1] = new PointF((float)(x / scale + d2), (float)(y / scale - d1));
-      btnPts[2] = new PointF((float)(x / scale + d1), (float)(y / scale - d2));
-      btnPts[3] = new PointF((float)(x / scale + d1), (float)(y / scale + d2));
-      btnPts[4] = new PointF((float)(x / scale + d2), (float)(y / scale + d1));
-      btnPts[5] = new PointF((float)(x / scale - d2), (float)(y / scale + d1));
-      btnPts[6] = new PointF((float)(x / scale - d1), (float)(y / scale + d2));
-      btnPts[7] = new PointF((float)(x / scale - d1), (float)(y / scale - d2));
+      float x = (float)(ip.X / scale);
+      float y = (float)(ip.Y / scale);
+      btnPts[0] = new PointF(x - d2, y - d1);
+      btnPts[1] = new PointF(x + d2, y - d1);
+      btnPts[2] = new PointF(x + d1, y - d2);
+      btnPts[3] = new PointF(x + d1, y + d2);
+      btnPts[4] = new PointF(x + d2, y + d1);
+      btnPts[5] = new PointF(x - d2, y + d1);
+      btnPts[6] = new PointF(x - d1, y + d2);
+      btnPts[7] = new PointF(x - d1, y - d2);
       return btnPts;
     }
     //------------------------------------------------------------------------------
 
-    private static void DrawButtons(Graphics graphics, Paths CtrlPts, bool small = false)
+    private static void DrawButtons(Graphics graphics, MultiPath mp, bool small = false)
     {
-      if (CtrlPts.Count == 0) return;
-
-      //draw buttons only for the vertices in the LAST path of CtrlPts ...
-      int i = CtrlPts.Count - 1;
-      int len = CtrlPts[i].Count;
-      if (len == 0) return;
-
+      if (mp == null || mp.Count == 0) return;
       GraphicsPath gpath = new GraphicsPath(FillMode.Alternate);
-      for (int j = 0; j < len; ++j)
-      {
-        PointF[] btnPts = MakeButton(CtrlPts[i][j], small);
-        gpath.AddPolygon(btnPts);
-      }
-      
       SolidBrush midBrush, startBrush, endBrush;
       Pen pen;
       if (small)
@@ -284,21 +343,35 @@ namespace Clipper_Lines_Demo
         endBrush = new SolidBrush(MakeColor(0x99FA8072));
         pen = new Pen(Color.Black, 1.0f);
       }
+      foreach (MultiPathSegment mps in mp)
+      {
+        int len = mps.Count;
+        if (len == 0) continue;
 
-      graphics.FillPath(midBrush, gpath);
-      graphics.DrawPath(pen, gpath);
+        for (int j = 0; j < len; ++j)
+        {
+          PointF[] btnPts = MakeButton(mps[j], small);
+          gpath.AddPolygon(btnPts);
+        }
+        graphics.FillPath(midBrush, gpath);
+        graphics.DrawPath(pen, gpath);
+        gpath.Reset();
+      }
 
       //draw the start button a shade of green ...
-      gpath.Reset();
-      gpath.AddPolygon(MakeButton(CtrlPts[i][0], small));
-      graphics.FillPath(startBrush, gpath);
-
-      //draw the end button a shade of red ...
-      if (len > 1)
+      if (mp.Count > 0 && mp[0].Count > 0)
       {
-        gpath.Reset();
-        gpath.AddPolygon(MakeButton(CtrlPts[i][len-1], small));
-        graphics.FillPath(endBrush, gpath);
+        gpath.AddPolygon(MakeButton(mp[0][0], small));
+        graphics.FillPath(startBrush, gpath);
+
+        MultiPathSegment mps = mp[mp.Count - 1];
+        //draw the end button a shade of red ...
+        if (mps.index > 0 || mps.Count > 1)
+        {
+          gpath.Reset();
+          gpath.AddPolygon(MakeButton(mps[mps.Count -1], small));
+          graphics.FillPath(endBrush, gpath);
+        }
       }
 
       //clean-up
@@ -310,58 +383,42 @@ namespace Clipper_Lines_Demo
     }
     //------------------------------------------------------------------------------
 
-    private static void DrawCBezierCtrlLines(Graphics graphics, Paths paths, uint color)
+    private static PointF PathToPointF(IntPoint ip)
     {
-      if (paths.Count == 0) return;
-      Pen pen = new Pen(MakeColor(color));
-      GraphicsPath gpath = new GraphicsPath();
-      int i = paths.Count - 1, j = paths[i].Count;
-      PointF[] pts = new PointF[2];
-      if (j > 1)
-      {
-        pts[0].X = (float)(paths[i][0].X / scale);
-        pts[0].Y = (float)(paths[i][0].Y / scale);
-        pts[1].X = (float)(paths[i][1].X / scale);
-        pts[1].Y = (float)(paths[i][1].Y / scale);
-        gpath.StartFigure();
-        gpath.AddLines(pts);
-        int k = 2;
-        while (k < j - 1)
-        {
-          pts[0].X = (float)(paths[i][k].X / scale);
-          pts[0].Y = (float)(paths[i][k].Y / scale);
-          pts[1].X = (float)(paths[i][k + 1].X / scale);
-          pts[1].Y = (float)(paths[i][k + 1].Y / scale);
-          gpath.StartFigure();
-          gpath.AddLines(pts);
-          k += (k % 3 == 0 ? 2 : 1);
-        }
-      }
-      graphics.DrawPath(pen, gpath);
-      gpath.Reset();
-      pen.Dispose();
-      gpath.Dispose();
+      PointF result = new PointF((float)(ip.X / scale), (float)(ip.Y / scale));
+      return result;
     }
     //------------------------------------------------------------------------------
 
-    private static void DrawQBezierCtrlLines(Graphics graphics, Paths paths, uint color)
+    private static void DrawBezierCtrlLines(Graphics graphics,
+      MultiPathSegment mps, uint color)
     {
-      if (paths.Count == 0) return;
+      int cnt = mps.Count;
+      if (cnt < 2) return;
       Pen pen = new Pen(MakeColor(color));
       GraphicsPath gpath = new GraphicsPath();
-      int i = paths.Count - 1, j = paths[i].Count;
       PointF[] pts = new PointF[2];
-      for (int k = 1; k < j; k++)
-      {
-        pts[0].X = (float)(paths[i][k - 1].X / scale);
-        pts[0].Y = (float)(paths[i][k - 1].Y / scale);
-        pts[1].X = (float)(paths[i][k].X / scale);
-        pts[1].Y = (float)(paths[i][k].Y / scale);
-        gpath.StartFigure();
-        gpath.AddLines(pts);
-      }
+      pts[0] = PathToPointF(mps[0]);
+      pts[1] = PathToPointF(mps[1]);
+      gpath.StartFigure();
+      gpath.AddLines(pts);
+
+      if (mps.IsValid()) 
+        if (mps.curvetype == CurveType.CubicBezier)
+        {
+          pts[0] = PathToPointF(mps[2]);
+          pts[1] = PathToPointF(mps[3]);
+          gpath.StartFigure();
+          gpath.AddLines(pts);
+        }
+        else
+        {
+          pts[0] = PathToPointF(mps[2]);
+          gpath.StartFigure();
+          gpath.AddLines(pts);
+        }
+
       graphics.DrawPath(pen, gpath);
-      gpath.Reset();
       pen.Dispose();
       gpath.Dispose();
     }
@@ -372,42 +429,56 @@ namespace Clipper_Lines_Demo
       FillMode fillMode = FillMode.Alternate, double penWidth = 1.0)
     {
       if (paths.Count == 0) return;
+
       SolidBrush brush = new SolidBrush (MakeColor(brushClr));
       Pen pen = new Pen(MakeColor(penClr), (float)penWidth);
       GraphicsPath gpath = new GraphicsPath(fillMode);
-      for (int i = 0; i < paths.Count; ++i)
-        ClipperPathToGraphicsPath(paths[i], gpath, closed);
-      if (closed) graphics.FillPath(brush, gpath);
-      graphics.DrawPath(pen, gpath);
-      
-      brush.Dispose();
-      pen.Dispose();
-      gpath.Dispose();
+      try
+      {
+        for (int i = 0; i < paths.Count; ++i)
+          IntPointsToGraphicsPath(paths[i], gpath, closed);
+        if (closed) graphics.FillPath(brush, gpath);
+        graphics.DrawPath(pen, gpath);
+      }
+      finally
+      {
+        brush.Dispose();
+        pen.Dispose();
+        gpath.Dispose();
+      }
     }
     //------------------------------------------------------------------------------
 
-    private Paths GetActivePaths()
+    private MultiPath GetActivePath()
     {
-      Paths p;
-      if (rbSubjLine.Checked) p = subjLines;
-      else if (rbSubjCBezier.Checked) p = subjCBeziers;
-      else if (rbSubjQBezier.Checked) p = subjQBeziers;
-      else if (rbSubjArc.Checked) p = subjArcs;
-      else if (rbSubjPoly.Checked) p = subjPolygons;
-      else if (rbSubjEllipses.Checked) p = subjEllipses;
-      else p = clipPolygons;
-      return p;
+      if (rbClipPoly.Checked)
+      {
+        MultiPath mp = GetCurrentClipMultiPath();
+        if (mp == null) return allPaths.NewMultiPath(CLIP, true);
+        else return mp;
+      }
+      else
+      {
+        MultiPath mp = GetCurrentSubjMultiPath();
+        if (mp == null) return allPaths.NewMultiPath(SUBJECT, false);
+        else return mp;
+      }
     }
     //------------------------------------------------------------------------------
 
-    private int GetButtonIndex(IntPoint mousePt)
+    private int GetButtonIndex(IntPoint mousePt, out MultiPathSegment mps)
     {
-      Paths p = GetActivePaths();
-      int i = p.Count -1;
-      if (i < 0 || p[i].Count == 0) return -1;
-      for (int j = 0; j < p[i].Count; j++)
-        if (Math.Abs(p[i][j].X - mousePt.X) <= btnRadius &&
-          Math.Abs(p[i][j].Y - mousePt.Y) <= btnRadius) return j;
+      MultiPath mp = GetActivePath();
+      mps = null;
+      if (mp.Count == 0) return -1;
+      for (int i = 0; i < mp.Count; i++)
+        for (int j = 0; j < mp[i].Count; j++)
+          if (Math.Abs(mp[i][j].X - mousePt.X) <= btnRadius &&
+          Math.Abs(mp[i][j].Y - mousePt.Y) <= btnRadius)
+          {
+            mps = mp[i];
+            return j;
+          }
       return -1;
     }
     //------------------------------------------------------------------------------
@@ -417,23 +488,43 @@ namespace Clipper_Lines_Demo
       if (e.Button == MouseButtons.Right)
       {
         mNewPath_Click(sender, e);
-        MovingButton = -1;
+        MovingButtonIdx = -1;
       }
       else if (DisplayPanel.Cursor == Cursors.Hand)
       {
-        MovingButton = GetButtonIndex(new IntPoint(e.X * scale, e.Y * scale));
+        MovingButtonIdx = GetButtonIndex(new IntPoint(e.X * scale, e.Y * scale), out MovingButtonSeg);
         BmpUpdateNeeded();
       }
       else
       {
-        Paths p = GetActivePaths();
-        if (p.Count == 0 || (p == subjEllipses && p[p.Count - 1].Count == 3)) p.Add(new Path());
-        int i = p.Count;
-        p[i - 1].Add(new IntPoint(e.X * scale, e.Y * scale));
-        i = p[i - 1].Count;
+        //Add a new control point ...
+
+        CurveType rbPathType = GetRadiobuttonPathType();
+        MultiPath mp = GetActivePath();
+        if (mp.Count == 0)
+          mp.NewMultiPathSegment(rbPathType, new Path());
+        else if (rbPathType != GetCurrentPathType(mp))
+        {
+          if (rbPathType != GetCurrentPathType(mp))
+          {
+            Path tmp = new Path();
+            if (!mp.IsValid()) 
+            {
+              mp[mp.Count - 1].CopyTo(tmp);
+              mp.RemoveLast();
+            }
+            mp.NewMultiPathSegment(rbPathType, tmp);
+          }
+        }
+        if (!mp[mp.Count - 1].Add(new IntPoint(e.X * scale, e.Y * scale)))
+        {
+          mp.NewMultiPathSegment(rbPathType, new Path());
+          mp[mp.Count - 1].Add(new IntPoint(e.X * scale, e.Y * scale));
+        }
+        
         UpdateBtnAndMenuState();
         BmpUpdateNeeded();
-        MovingButton = -1;
+        MovingButtonIdx = -1;
       }
       LeftButtonPressed = (e.Button == MouseButtons.Left);
     }
@@ -443,16 +534,15 @@ namespace Clipper_Lines_Demo
     {
       if (LeftButtonPressed)
       { 
-        if (MovingButton < 0) return;
-        Paths p = GetActivePaths();
-        int i = p.Count - 1;
-        if (MovingButton >= p[i].Count) return;
-        p[i][MovingButton] = new IntPoint(e.X * scale, e.Y * scale);
+        if (MovingButtonIdx < 0) return;
+        MultiPath mp = GetActivePath();
+        if (MovingButtonIdx >= MovingButtonSeg.Count) return;
+        MovingButtonSeg.Move(MovingButtonIdx, new IntPoint(e.X * scale, e.Y * scale));
         BmpUpdateNeeded();
       }
       else
       {
-        int i = GetButtonIndex(new IntPoint(e.X * scale, e.Y * scale));
+        int i = GetButtonIndex(new IntPoint(e.X * scale, e.Y * scale), out MovingButtonSeg);
         DisplayPanel.Cursor = (i >= 0 ? Cursors.Hand : Cursors.Default);
       }
     }
@@ -461,9 +551,9 @@ namespace Clipper_Lines_Demo
     private void DisplayPanel_MouseUp(object sender, MouseEventArgs e)
     {
       if (e.Button == MouseButtons.Left) LeftButtonPressed = false;
-      if (MovingButton >= 0)
+      if (MovingButtonIdx >= 0)
       {
-        MovingButton = -1;
+        MovingButtonIdx = -1;
         BmpUpdateNeeded();
       }
     }
@@ -478,25 +568,22 @@ namespace Clipper_Lines_Demo
 
     private void UpdateBtnAndMenuState()
     {
-      mClear.Enabled = subjLines.Count > 0 || subjCBeziers.Count > 0 ||
-        subjQBeziers.Count > 0 || subjArcs.Count > 0 ||
-        subjPolygons.Count > 0 || subjEllipses.Count > 0 || clipPolygons.Count > 0;
-      Paths p = GetActivePaths();
-      int i = p.Count;
-      if (i == 0)
+      mClear.Enabled = allPaths.Count > 0;
+      MultiPath mp = GetActivePath();
+      int cnt  = allPaths.Count;
+      MultiPath subjMp = GetCurrentSubjMultiPath();
+
+      cbSubjClosed.Checked = (subjMp != null && subjMp.IsClosed);
+      if (mp.Count == 0)
       {
-        mUndo.Enabled = false;
+        mUndo.Enabled = mp.owner.Count > 0;
         mNewPath.Enabled = false;
         bNewPath.Enabled = false;
         return;
       }
-      int j = p[i - 1].Count;
-      mUndo.Enabled = (i > 1 || j > 0);
-      if (p == subjLines) bNewPath.Enabled = (j > 1);
-      else if (p == subjCBeziers) bNewPath.Enabled = (j > 3);
-      else if (p == subjQBeziers) bNewPath.Enabled = (j > 2);
-      else if (p == subjArcs) bNewPath.Enabled = (j > 2);
-      else bNewPath.Enabled = (j > 2);
+      int j = mp[mp.Count - 1].Count;
+      mUndo.Enabled = (mp.Count > 1 || j > 0);
+      bNewPath.Enabled = mp.IsValid();
       mNewPath.Enabled = bNewPath.Enabled;
     }
     //------------------------------------------------------------------------------
@@ -522,12 +609,17 @@ namespace Clipper_Lines_Demo
 
     private void mUndo_Click(object sender, EventArgs e)
     {
-      Paths p = GetActivePaths();
-      int i = p.Count - 1;
-      if (i < 0) return;
-      int j = p[i].Count - 1;
-      if (j >= 0) p[i].RemoveAt(j);
-      else p.RemoveAt(i);
+      MultiPath mp = GetActivePath();
+      if (mp.Count == 0)
+      {
+        if (mp.owner.Count == 1) return;
+        else mp.owner.RemoveAt(mp.owner.Count -1);
+      }
+      else
+      {
+        MultiPathSegment mps = mp[mp.Count - 1];
+        if (!mps.RemoveLast()) mp.RemoveLast();
+      }
       UpdateBtnAndMenuState();
       BmpUpdateNeeded();
     }
@@ -535,13 +627,7 @@ namespace Clipper_Lines_Demo
 
     private void mClear_Click(object sender, EventArgs e)
     {
-      subjLines.Clear();
-      subjCBeziers.Clear();
-      subjQBeziers.Clear();
-      subjArcs.Clear();
-      subjPolygons.Clear();
-      subjEllipses.Clear();
-      clipPolygons.Clear();
+      allPaths.Clear();
       UpdateBtnAndMenuState();
       BmpUpdateNeeded();
     }
@@ -549,54 +635,10 @@ namespace Clipper_Lines_Demo
 
     private void mNewPath_Click(object sender, EventArgs e)
     {
-      Paths p = GetActivePaths();
-      int i = p.Count;
-      if (i == 0) return;
-
-      i = p[i-1].Count;
-      if (p == subjLines)
-      {
-        if (i > 1) p.Add(new Path());
-      }
-      else if (p == subjCBeziers)
-      {
-        if (i > 3)
-        {
-          int j = (i - 1) % 3; //nb: cubic bezier
-          if (j != 0) p[p.Count - 1].RemoveRange(i - j, j);
-          p.Add(new Path());
-        }
-      }
-      else if (p == subjQBeziers)
-      {
-        if (i > 2)
-        {
-          int j = (i - 1) % 2; //nb: quad bezier
-          if (j != 0) p[p.Count - 1].RemoveRange(i - j, 1);
-          p.Add(new Path());
-        }
-      }
-      else if (p == subjArcs)
-      {
-        if (i > 2)
-        {
-          int j = (i - 1) % 2;
-          if (j != 0) p[p.Count - 1].RemoveRange(i - j, 1);
-          p.Add(new Path());
-        }
-      }
-      else if (p == subjPolygons)
-      {
-        if (i > 2) p.Add(new Path());
-      }
-      else if (p == subjEllipses)
-      {
-        if (i == 3) p.Add(new Path());
-      }
-      else if (p == clipPolygons)
-      {
-        if (i > 2) p.Add(new Path());
-      }
+      MultiPath mp = GetActivePath();
+      if (!mp.IsValid()) return;
+      int refID = (rbClipPoly.Checked ? CLIP : SUBJECT);
+      mp.owner.NewMultiPath((UInt16)refID, mp.IsClosed);
       UpdateBtnAndMenuState();
       BmpUpdateNeeded();
     }
@@ -671,8 +713,8 @@ namespace Clipper_Lines_Demo
     private void cbReconstCurve_Click(object sender, EventArgs e)
     {
       cbShowCtrls.Enabled = cbReconstCurve.Checked;
-      if ((subjCBeziers.Count > 0 || subjQBeziers.Count > 0 ||
-        subjArcs.Count > 0 || subjEllipses.Count > 0) && clipPolygons.Count > 0)
+      if (allPaths.Count > 0 && GetCurrentSubjMultiPath() != null && 
+        GetCurrentClipMultiPath() != null) 
           BmpUpdateNeeded();
     }
     //------------------------------------------------------------------------------
@@ -683,92 +725,94 @@ namespace Clipper_Lines_Demo
     }
     //------------------------------------------------------------------------------
 
-    void SaveToFile(string filename, Paths ppg)
+    private void mSaveAs_Click(object sender, EventArgs e)
     {
-      StreamWriter writer = new StreamWriter(filename);
+      if (allPaths.Count == 0 || (allPaths.Count == 1 && allPaths[0].Count < 2))
+        return;
+      if (openFileDialog1.FileName != "") 
+        saveFileDialog1.FileName = openFileDialog1.FileName;
+      if (saveFileDialog1.ShowDialog() != DialogResult.OK) return;
+      openFileDialog1.FileName = saveFileDialog1.FileName;
+      StreamWriter writer = new StreamWriter(saveFileDialog1.FileName);
       if (writer == null) return;
-      writer.Write("{0}\n", ppg.Count);
-      foreach (Path pg in ppg)
-      {
-        writer.Write("{0}\n", pg.Count);
-        foreach (IntPoint ip in pg)
-          writer.Write("{0:0.00}, {1:0.00}\n",
-              (double)ip.X / scale, (double)ip.Y / scale);
-      }
+      writer.Write(allPaths.ToSvgString());
       writer.Close();
-    }
-    //------------------------------------------------------------------------------
-
-    bool LoadFromFile(string filename, Paths ppg)
-    {
-      ppg.Clear();
-      if (!File.Exists(filename)) return false;
-      StreamReader sr = new StreamReader(filename);
-      if (sr == null) return false;
-      string line;
-      if ((line = sr.ReadLine()) == null) return false;
-      int polyCnt, vertCnt;
-      if (!Int32.TryParse(line, out polyCnt) || polyCnt < 0) return false;
-      ppg.Capacity = polyCnt;
-      for (int i = 0; i < polyCnt; i++)
-      {
-        if ((line = sr.ReadLine()) == null) return false;
-        if (!Int32.TryParse(line, out vertCnt) || vertCnt < 0) return false;
-        Path pg = new Path(vertCnt);
-        ppg.Add(pg);
-        for (int j = 0; j < vertCnt; j++)
-        {
-          double x, y;
-          if ((line = sr.ReadLine()) == null) return false;
-          char[] delimiters = new char[] { ',', ' ' };
-          string[] vals = line.Split(delimiters);
-          if (vals.Length < 2) return false;
-          if (!double.TryParse(vals[0], out x)) return false;
-          if (!double.TryParse(vals[1], out y))
-            if (vals.Length < 2 || !double.TryParse(vals[2], out y)) return false;
-          x = x * scale;
-          y = y * scale;
-          pg.Add(new IntPoint((int)Math.Round(x), (int)Math.Round(y)));
-        }
-      }
-      return true;
     }
     //------------------------------------------------------------------------------
 
     private void mSave_Click(object sender, EventArgs e)
     {
-      SaveToFile("SubjLines.txt", subjLines);
-      SaveToFile("SubjCBeziers.txt", subjCBeziers);
-      SaveToFile("SubjQBeziers.txt", subjQBeziers);
-      SaveToFile("SubjArcs.txt", subjArcs);
-      SaveToFile("SubjPolys.txt", subjPolygons);
-      SaveToFile("SubjEllipses.txt", subjEllipses);
-      SaveToFile("ClipPolys.txt", clipPolygons);
+      if (openFileDialog1.FileName == "")
+      {
+        mSaveAs_Click(sender, e);
+        return;
+      }
+      StreamWriter writer = new StreamWriter(openFileDialog1.FileName);
+      if (writer == null) return;
+      writer.Write(allPaths.ToSvgString());
+      writer.Close();
     }
     //------------------------------------------------------------------------------
 
-    private void mLoad_Click(object sender, EventArgs e)
+    private void mOpen_Click(object sender, EventArgs e)
     {
-      subjLines.Clear();
-      subjCBeziers.Clear();
-      subjQBeziers.Clear();
-      subjArcs.Clear();
-      subjPolygons.Clear();
-      subjEllipses.Clear();
-      clipPolygons.Clear();
-
-      LoadFromFile("SubjLines.txt", subjLines);
-      LoadFromFile("SubjCBeziers.txt", subjCBeziers);
-      LoadFromFile("SubjQBeziers.txt", subjQBeziers);
-      LoadFromFile("SubjArcs.txt", subjArcs);
-      LoadFromFile("SubjPolys.txt", subjPolygons);
-      LoadFromFile("SubjEllipses.txt", subjEllipses);
-      LoadFromFile("ClipPolys.txt", clipPolygons);
-
+      if (openFileDialog1.ShowDialog() != DialogResult.OK) return;
+      allPaths.Clear();
+      this.Text = openFileDialog1.FileName;
+      StreamReader sr = new StreamReader(openFileDialog1.FileName);
+      allPaths.FromSvgString(sr.ReadToEnd());
+      sr.Close();
       UpdateBtnAndMenuState();
       BmpUpdateNeeded();
     }
     //------------------------------------------------------------------------------
 
+    private void cbSubjClosed_Click(object sender, EventArgs e)
+    {
+      MultiPath mp = GetActivePath();
+      mp.IsClosed = cbSubjClosed.Checked;
+      BmpUpdateNeeded();
+    }
+    //------------------------------------------------------------------------------
+
+    private void ScaleMultiPaths(MultiPaths multiP, double scale)
+    {
+      foreach (MultiPath mp in multiP)
+        foreach (MultiPathSegment mps in mp)
+          for (int i = 0; i < mps.Count; i++)
+          {
+            if (i == 0 && mps.index > 0) continue;
+            IntPoint ip = new IntPoint(mps[i].X * scale, mps[i].Y * scale, mps[i].Z);
+            mps.Move(i, ip);
+          }
+    }
+    //------------------------------------------------------------------------------
+
+    private void mZoomIn_Click(object sender, EventArgs e)
+    {
+      ScaleMultiPaths(allPaths, 2.0);
+      UpdateBtnAndMenuState();
+      BmpUpdateNeeded();
+    }
+    //------------------------------------------------------------------------------
+
+    private void mZoomOut_Click(object sender, EventArgs e)
+    {
+      ScaleMultiPaths(allPaths, 0.5);
+      UpdateBtnAndMenuState();
+      BmpUpdateNeeded();
+    }
+    //------------------------------------------------------------------------------
+
+    private void cbShowCoords_Click(object sender, EventArgs e)
+    {
+      BmpUpdateNeeded();
+    }
+
   }
+
+  //---------------------------------------------------------------------------
+  //---------------------------------------------------------------------------
+
+
 }
