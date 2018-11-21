@@ -39,6 +39,13 @@ type
   TPoint64 = record X, Y: Int64; end;
   TPointD = record X, Y: double; end;
 
+  //TPath: a simple data structure to represent a series of vertices, whether
+  //open (poly-line) or closed (polygon). A path may be simple or complex (self
+  //intersecting). For simple polygons, path orientation (whether clockwise or
+  //counter-clockwise) is generally used to differentiate outer paths from inner
+  //paths (holes). For complex polygons (and also for overlapping polygons),
+  //explicit 'filling rules' (see below) are used to indicate regions that are
+  //inside (filled) and regions that are outside (unfilled) a specific polygon.
   TPath = array of TPoint64;
   TPaths = array of TPath;
 
@@ -69,11 +76,10 @@ type
   TVertexArray = array[0..MaxInt div sizeof(TVertex) -1] of TVertex;
 
   //Every closed path (or polygon) is made up of a series of vertices forming
-  //edges that alternate between going up (relative to the Y-axis) and then
-  //going down. Edges that consecutively go up or consecutively go down can be
-  //grouped together into 'bounds' (or sides if they're simple convex polygons).
-  //Local Minima are pointers to those vertices where descending bounds become
-  //ascending bounds.
+  //edges that alternate between going up (relative to the Y-axis) and going
+  //down. Edges consecutively going up or consecutively going down are called
+  //'bounds' (or sides if they're simple polygons). 'Local Minima' refer to
+  //vertices where descending bounds become ascending bounds.
 
   PLocalMinima = ^TLocalMinima;
   TLocalMinima = record
@@ -94,11 +100,14 @@ type
     WindCnt  : Integer;       //current wind count
     WindCnt2 : Integer;       //current wind count of the opposite TPolyType
     OutRec   : TOutRec;
-    //AEL - 'active edge' linked list (Vatti's AET - active edge table)
+    //AEL: 'active edge' linked list (Vatti's AET - active edge table)
+    //     the list of all edges (from left to right) intersecting with the
+    //     current scanbeam (a horizontal beam that sweeps from bottom to top
+    //     over all the paths in the clipping operation).
     PrevInAEL: PActive;
     NextInAEL: PActive;
-    //SEL - 'sorted edge' linked list (Vatti's ST - sorted table)
-    //    -  this is also (re)used in processing horizontals.
+    //SEL: 'sorted edge' linked list (Vatti's ST - sorted table)
+    //     this is also (re)used in processing horizontals.
     PrevInSEL: PActive;
     NextInSEL: PActive;
     Jump     : PActive;       //for merge sorting (see BuildIntersectList())
@@ -124,7 +133,7 @@ type
   TOutRecState = (orOuter, orInner, orOpen);
 
   //OutRec: contains a path in the clipping solution. Edges in the AEL will
-  //have the OutRec pointer assigned if they are part of the clipping solution.
+  //have an OutRec pointer assigned if they form part of the clipping solution.
   TOutRec = class
     Idx      : Integer;
     Owner    : TOutRec;
@@ -197,6 +206,7 @@ type
     procedure CleanUp; //unlike Clear, CleanUp preserves added paths
     function ExecuteInternal(clipType: TClipType; fillRule: TFillRule): Boolean;
     procedure BuildResult(out closedPaths, openPaths: TPaths);
+    procedure BuildResultD(out closedPaths, openPaths: TPathsD);
     procedure BuildResultTree(polyTree: TPolyTree; out openPaths: TPaths);
     property OutRecList: TList read FOutRecList;
   public
@@ -228,7 +238,7 @@ type
       fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
     function Execute(clipType: TClipType; out closedPaths, openPaths: TPathsD;
       fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
-    //Alternative TPolyTree structure to contain the solution's closed path ...
+    //Alternative PolyTree structure to contain the solution's closed path ...
     function Execute(clipType: TClipType;
       var polytree: TPolyTree; out openPaths: TPaths;
       fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
@@ -241,7 +251,7 @@ type
     FParent      : TPolyPath;
     FPath        : TPath;
     FChildList   : TList;
-    FScalingFrac : double; //nb: set by TClipper object
+    FScalingFrac : double; //nb: set by the Clipper object
     function     GetChildCnt: Integer;
     function     GetChild(index: Integer): TPolyPath;
     function     GetIsHole: Boolean;
@@ -262,10 +272,10 @@ type
     property     Scaling: double read FScalingFrac; //read only!
   end;
 
-  //TPolyTree: Intended as a read-only data structure for closed paths
-  //returned by a clipping operation. This structure is much more complex
-  //than the alternative TPaths structure, but it does preserve path ownership
-  //(ie which paths contain (own) other paths).
+  //TPolyTree: Intended as a read-only data structure for closed paths that are
+  //returned by a clipping operation. While this structure is more complex than
+  //the alternative TPaths structure, it does preserve path ownership (ie those
+  //paths that contain (own) other paths).
   TPolyTree = class(TPolyPath);
 
   EClipperLibException = class(Exception);
@@ -690,6 +700,40 @@ begin
       op := op.Next;
       result[j] := Point64(op.Pt.X / scaling, op.Pt.Y / scaling);
       if not PointsEqual(result[j-1], result[j]) then inc(j);
+    end;
+    if j < opCnt then setLength(result, j);
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function BuildPathD(op: TOutPt; scaling: double): TPathD;
+var
+  i, j, opCnt: integer;
+begin
+  result := nil;
+  opCnt := PointCount(op);
+  if (opCnt < 2) then Exit;
+  setLength(result, opCnt);
+  if scaling = 1.0 then
+  begin
+    for i := 0 to opCnt -1 do
+    begin
+      result[i].X := op.Pt.X;
+      result[i].Y := op.Pt.Y;
+      op := op.Next;
+    end;
+  end else
+  begin
+    result[0].X := op.Pt.X / scaling;
+    result[0].Y := op.Pt.Y / scaling;
+    j := 1;
+    for i := 2 to opCnt do
+    begin
+      op := op.Next;
+      result[j].X := op.Pt.X / scaling;
+      result[j].Y := op.Pt.Y / scaling;
+      if (result[j].X <> result[j-1].X) and
+        (result[j].Y <> result[j-1].Y) then inc(j);
     end;
     if j < opCnt then setLength(result, j);
   end;
@@ -2072,26 +2116,12 @@ end;
 function TClipper.Execute(clipType: TClipType;
   out closedPaths: TPathsD; fillRule: TFillRule): Boolean;
 var
-  i, j, len, len2: integer;
-  pp, dummy: TPaths;
+  dummy: TPathsD;
 begin
   closedPaths := nil;
   try
     Result := ExecuteInternal(clipType, fillRule);
-    if not Result then Exit;
-    BuildResult(pp, dummy);
-    len := length(pp);
-    setLength(closedPaths, len);
-    for i := 0 to len -1 do
-    begin
-      len2 := length(pp[i]);
-      setlength(closedPaths[i], len2);
-      for j := 0 to len2 -1 do
-      begin
-        closedPaths[i][j].X := pp[i][j].X / FScalingFrac;
-        closedPaths[i][j].Y := pp[i][j].Y / FScalingFrac;
-      end;
-    end;
+    if Result then BuildResultD(closedPaths, dummy);
   finally
     CleanUp;
   end;
@@ -2101,42 +2131,12 @@ end;
 
 function TClipper.Execute(clipType: TClipType;
   out closedPaths, openPaths: TPathsD; fillRule: TFillRule): Boolean;
-var
-  i, j, len, len2: integer;
-  cp, op: TPaths;
 begin
   closedPaths := nil;
   openPaths := nil;
   try
     Result := ExecuteInternal(clipType, fillRule);
-    if Result then BuildResult(cp, op);
-
-    len := length(cp);
-    setLength(closedPaths, len);
-    for i := 0 to len -1 do
-    begin
-      len2 := length(cp[i]);
-      setlength(closedPaths[i], len2);
-      for j := 0 to len2 -1 do
-      begin
-        closedPaths[i][j].X := cp[i][j].X / FScalingFrac;
-        closedPaths[i][j].Y := cp[i][j].Y / FScalingFrac;
-      end;
-    end;
-
-    len := length(op);
-    setLength(openPaths, len);
-    for i := 0 to len -1 do
-    begin
-      len2 := length(op[i]);
-      setlength(openPaths[i], len2);
-      for j := 0 to len2 -1 do
-      begin
-        openPaths[i][j].X := op[i][j].X / FScalingFrac;
-        openPaths[i][j].Y := op[i][j].Y / FScalingFrac;
-      end;
-    end;
-
+    if Result then BuildResultD(closedPaths, openPaths);
   finally
     CleanUp;
   end;
@@ -2695,12 +2695,46 @@ begin
 end;
 //------------------------------------------------------------------------------
 
+procedure TClipper.BuildResultD(out closedPaths, openPaths: TPathsD);
+var
+  i, j, cntClosed, cntOpen: Integer;
+  outRec: TOutRec;
+begin
+  cntClosed := 0; cntOpen := 0;
+  SetLength(closedPaths, FOutRecList.Count);
+  SetLength(openPaths, FOutRecList.Count);
+  for i := 0 to FOutRecList.Count -1 do
+  begin
+    outRec := FOutRecList[i];
+    if not assigned(outRec.Pts) then Continue;
+
+    if (outRec.State = orOpen) then
+    begin
+      openPaths[cntOpen] := BuildPathD(outRec.Pts, FScalingFrac);
+      if length(openPaths[cntOpen]) > 1 then inc(cntOpen);
+    end else
+    begin
+      closedPaths[cntClosed] := BuildPathD(outRec.Pts, FScalingFrac);
+      j := high(closedPaths[cntClosed]);
+      if (j > 1) and
+        (closedPaths[cntClosed][0].X = closedPaths[cntClosed][j].X) and
+        (closedPaths[cntClosed][0].Y = closedPaths[cntClosed][j].Y) then
+          setlength(closedPaths[cntClosed], j);
+      if j > 1 then inc(cntClosed);
+    end;
+  end;
+  SetLength(closedPaths, cntClosed);
+  SetLength(openPaths, cntOpen);
+end;
+//------------------------------------------------------------------------------
+
 procedure TClipper.BuildResultTree(polyTree: TPolyTree; out openPaths: TPaths);
 var
   i, j, cntOpen: Integer;
   outRec: TOutRec;
   path: TPath;
 begin
+  polyTree.Clear;
   polyTree.FScalingFrac := self.FScalingFrac;
   setLength(openPaths, FOutRecList.Count);
   cntOpen := 0;

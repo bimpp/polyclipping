@@ -97,6 +97,7 @@ type
     procedure DisposeActive2(a: PActive2);
     function DoFix(a1, a2: PActive2): Boolean;
     procedure CleanUpPath;
+    function ExecuteEx(clipType: TClipType; fillRule: TFillRule): Boolean;
   public
     constructor Create; override;
     destructor Destroy; override;
@@ -106,6 +107,10 @@ type
       fillRule: TFillRule = frEvenOdd): Boolean; override;
     function Execute(clipType: TClipType;
       var polytree: TPolyTree; out openPaths: TPaths;
+      fillRule: TFillRule = frEvenOdd): Boolean; override;
+    function Execute(clipType: TClipType; out closedPaths: TPathsD;
+      fillRule: TFillRule = frEvenOdd): Boolean; override;
+    function Execute(clipType: TClipType; out closedPaths, openPaths: TPathsD;
       fillRule: TFillRule = frEvenOdd): Boolean; override;
   end;
 
@@ -144,40 +149,6 @@ begin
     Inc(Result);
     p := p.Next;
   until p = op;
-end;
-//------------------------------------------------------------------------------
-
-function OpToPath(op: TOutPt): TPath;
-var
-  i, cnt: integer;
-begin
-  result := nil;
-  cnt := PointCount(op);
-  if cnt < 3 then Exit;
-  SetLength(Result, cnt);
-  for i := 0 to cnt -1 do
-  begin
-    Result[i] := op.Pt;
-    op := op.Next;
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function ReBuildPaths(OutRecList: TList): TPaths;
-var
-  i, j: integer;
-  outRec: TOutRec;
-begin
-  j := 0;
-  setLength(result, OutRecList.Count);
-  for i := 0 to OutRecList.Count -1 do
-  begin
-    outRec := TOutRec(OutRecList[i]);
-    if outRec.Pts = nil then continue;
-    result[j] := OpToPath(outRec.pts);
-    if assigned(result[j]) then inc(j);
-  end;
-  setLength(result, j);
 end;
 //------------------------------------------------------------------------------
 
@@ -455,6 +426,17 @@ function GetIntersectPoint(a1, a2: PActive2): TPoint64;
 var
   b1, b2, m: Double;
 begin
+  if a1.dy = a2.dy then
+  begin
+    //Very rarely we'll get parallel edges here. The quick and dirty solution
+    //is simply to return an arbitrary vertex (as below) since these problem
+    //polygons are typically very small. However, ideally we should search for
+    //and fix the real edges that are intersecting.
+    //eg: (535,482 535,481 537,482 536,482 534,481)
+    result := a1.op.Pt;
+    Exit;
+  end;
+
   if a1.dy = HORIZONTAL then
   begin
     Result.Y := a1.op.Pt.Y;
@@ -548,6 +530,17 @@ begin
   end
   else if y > 0 then result := oCW
   else result := oCCW;
+end;
+//------------------------------------------------------------------------------
+
+function InsertOp(const pt: TPoint64; insertAfter: TOutPt): TOutPt;
+begin
+  Result := TOutPt.Create;
+  Result.Pt := pt;
+  Result.Next := insertAfter.Next;
+  insertAfter.Next.Prev := Result;
+  insertAfter.Next := Result;
+  Result.Prev := insertAfter;
 end;
 //------------------------------------------------------------------------------
 
@@ -856,21 +849,10 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function InsertOp(const pt: TPoint64; insertAfter: TOutPt): TOutPt;
-begin
-  Result := TOutPt.Create;
-  Result.Pt := pt;
-  Result.Next := insertAfter.Next;
-  insertAfter.Next.Prev := Result;
-  insertAfter.Next := Result;
-  Result.Prev := insertAfter;
-end;
-//------------------------------------------------------------------------------
-
 function TClipperEx.DoFix(a1, a2: PActive2): Boolean;
 var
-  op, op1,op2,op3,op4: TOutPt;
-  d, d1, d2, d3, d4: double;
+  op1,op2,op3,op4: TOutPt;
+  d1, d2, d3, d4: double;
   pt: TPoint64;
 begin
   FRedo := true;
@@ -887,6 +869,7 @@ begin
     op1 := a1.op; op2 := GetNextOp(a1);
     op3 := a2.op; op4 := GetNextOp(a2);
     pt := GetIntersectPoint(a1, a2);
+
     d1 := DistanceSqrd(op1.Pt, pt);
     d2 := DistanceSqrd(op2.Pt, pt);
     d3 := DistanceSqrd(op3.Pt, pt);
@@ -1036,6 +1019,7 @@ begin
   outRec.Idx := OutRecList.Add(outRec);
   outRec.Pts := op2;
   outRec.PolyPath := nil;
+  outRec.State := FOutRec.State;
   FRedo := true;
 end;
 //----------------------------------------------------------------------
@@ -1244,8 +1228,7 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function TClipperEx.Execute(clipType: TClipType; out closedPaths: TPaths;
-  fillRule: TFillRule): Boolean;
+function TClipperEx.ExecuteEx(clipType: TClipType; fillRule: TFillRule): Boolean;
 var
   i: integer;
 begin
@@ -1263,75 +1246,87 @@ begin
       else inc(i);
       CleanUpPath;
     end;
-    closedPaths := ReBuildPaths(OutRecList);
   except
     Result := false;
-    //DebugString := IntToStr(i);
   end;
   finally
     CleanUpPath;
-    CleanUp; //inherited;
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function TClipperEx.Execute(clipType: TClipType;
+  out closedPaths: TPaths; fillRule: TFillRule): Boolean;
+var
+  dummy: TPaths;
+begin
+  closedPaths := nil;
+  try
+    Result := ExecuteEx(clipType, fillRule);
+    if not Result then Exit;
+    BuildResult(closedPaths, dummy);
+  finally
+    CleanUp;
   end;
 end;
 //------------------------------------------------------------------------------
 
 function TClipperEx.Execute(clipType: TClipType; out closedPaths, openPaths: TPaths;
   fillRule: TFillRule = frEvenOdd): Boolean;
-//var
-//  i: integer;
 begin
-  Result := false;
-//  closedPaths := nil;
-//  openPaths := nil;
-//  try try
-//    Result := inherited Execute(clipType, closedPaths, fillRule);
-//    if not Result then Exit;
-//    BuildOutPaths(closedPaths, FOutList);
-//    for i := 0 to FOutList.Count -1 do
-//    begin
-//      if not PrepareSweep(i) then Continue;
-//      ProcessSweep;
-//      CleanUpPath;
-//    end;
-//    closedPaths := ReBuildPaths(FOutList);
-//  except
-//    Result := false;
-//  end;
-//  finally
-//    FinalCleanUp;
-//  end;
+  closedPaths := nil;
+  openPaths := nil;
+  try
+    Result := ExecuteEx(clipType, fillRule);
+    if not Result then Exit;
+    BuildResult(closedPaths, openPaths);
+  finally
+    CleanUp;
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function TClipperEx.Execute(clipType: TClipType; out closedPaths: TPathsD;
+  fillRule: TFillRule = frEvenOdd): Boolean;
+var
+  dummy: TPathsD;
+begin
+  closedPaths := nil;
+  try
+    Result := ExecuteEx(clipType, fillRule);
+    if not Result then Exit;
+    BuildResultD(closedPaths, dummy);
+  finally
+    CleanUp;
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function TClipperEx.Execute(clipType: TClipType; out closedPaths, openPaths: TPathsD;
+  fillRule: TFillRule = frEvenOdd): Boolean;
+begin
+  closedPaths := nil;
+  openPaths := nil;
+  try
+    Result := ExecuteEx(clipType, fillRule);
+    if Result then  BuildResultD(closedPaths, openPaths);
+  finally
+    CleanUp;
+  end;
 end;
 //------------------------------------------------------------------------------
 
 function TClipperEx.Execute(clipType: TClipType; var polytree: TPolyTree;
   out openPaths: TPaths; fillRule: TFillRule): Boolean;
-//var
-//  i: integer;
 begin
-  Result := false;
-//  if not assigned(polytree) then
-//    raise EClipperLibException.Create(rsClipper_PolyTreeErr);
-//  polytree.Clear;
-//  openPaths := nil;
-//  try try
-//    Result := false;
-////    Result := inherited Execute(clipType, polytree, openPaths, fillRule);
-////    if not Result then Exit;
-////    for i := 0 to FOpList.Count -1 do
-////    begin
-////      if not PrepareSweep(i) then Continue;
-////      ProcessSweep;
-////      CleanUpLocMins;
-////    end;
-//  except
-//    Result := false;
-//  end;
-//  finally
-//    FinalCleanUp;
-//  end;
+  openPaths := nil;
+  try
+    Result := ExecuteEx(clipType, fillRule);
+    if result then BuildResultTree(polytree, openPaths);
+  finally
+    CleanUp;
+  end;
 end;
 //------------------------------------------------------------------------------
 
-initialization
-finalization
 end.
