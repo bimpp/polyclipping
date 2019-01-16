@@ -18,6 +18,8 @@ uses
 type
   TGlyphMetricsArray = array of TGlyphMetrics;
 
+{$IFNDEF UNICODE}PByte = PChar;{$ENDIF}
+
 function GetCharInfo(c: Char;
   trueTypeFont: HFont; out metrics: TGlyphMetrics): TPaths;
 function GetCharInfos(s: string;

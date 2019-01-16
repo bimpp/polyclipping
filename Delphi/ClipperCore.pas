@@ -54,7 +54,7 @@ type
   TPathD = array of TPointD;
   TPathsD = array of TPathD;
 
-  TRect64 = record
+  TRect64 = {$IFDEF UNICODE}record{$ELSE}object{$ENDIF}
   private
     function GetWidth: Int64; {$IFDEF INLINING} inline; {$ENDIF}
     function GetHeight: Int64; {$IFDEF INLINING} inline; {$ENDIF}
@@ -69,7 +69,7 @@ type
     property IsEmpty: Boolean read GetIsEmpty;
   end;
 
-  TRectD = record
+  TRectD = {$ifdef UNICODE}record{$else}object{$endif}
   private
     function GetWidth: double; {$IFDEF INLINING} inline; {$ENDIF}
     function GetHeight: double; {$IFDEF INLINING} inline; {$ENDIF}
@@ -504,7 +504,11 @@ var
   ip, ipNext: TPoint64;
 begin
   cnt := Length(path);
-  if cnt < 3 then Exit(pipOutside);
+  if cnt < 3 then
+  begin
+    result := pipOutside;
+    Exit;
+  end;
   ip := path[0];
   Result := pipOn;
   val := 0;
