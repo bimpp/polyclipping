@@ -6,7 +6,7 @@ unit ClipperOffset;
 * Date      :  8 Noveber 2017                                                  *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2017                                         *
-* Purpose   :  Offset clipping solutions                                       *
+* Purpose   :  Offset paths and clipping solutions                             *
 * License   :  http://www.boost.org/LICENSE_1_0.txt                            *
 *******************************************************************************)
 
@@ -29,15 +29,12 @@ unit ClipperOffset;
 interface
 
 uses
-  SysUtils, Classes, Math, Clipper, ClipperMisc;
+  SysUtils, Classes, Math, ClipperCore, Clipper, ClipperEx;
 
 type
 
   TJoinType = (jtSquare, jtRound, jtMiter);
   TEndType = (etPolygon, etOpenJoined, etOpenButt, etOpenSquare, etOpenRound);
-
-  TPointD = record X, Y: Double; end;
-  TArrayOfPointD = array of TPointD;
 
   TClipperOffset = class
   private
@@ -45,7 +42,7 @@ type
     FSinA, FSin, FCos: Extended;
     FMiterLim, FMiterLimit: Double;
     FStepsPerRad: Double;
-    FNorms: TArrayOfPointD;
+    FNorms: TPathD;
     FSolution: TPaths;
     FOutPos: Integer;
     FPathIn: TPath;
@@ -75,7 +72,7 @@ type
     property ArcTolerance: Double read FArcTolerance write FArcTolerance;
   end;
 
-  function OffsetPaths(const paths: TPaths;
+  function ClipperOffsetPaths(const paths: TPaths;
     delta: Double; jt: TJoinType; et: TEndType): TPaths;
 
 implementation
@@ -483,7 +480,7 @@ begin
   DoOffset(FDelta);
 
   //clean up 'corners' ...
-  with TClipper.Create do
+  with TClipperEx.Create do
   try
     AddPaths(FSolution, ptSubject);
     if negate then
@@ -634,7 +631,7 @@ end;
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 
-function OffsetPaths(const paths: TPaths;
+function ClipperOffsetPaths(const paths: TPaths;
   delta: Double; jt: TJoinType; et: TEndType): TPaths;
 begin
   with TClipperOffset.Create do
