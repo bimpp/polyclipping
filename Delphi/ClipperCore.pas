@@ -111,6 +111,7 @@ function GetBounds(const paths: TPathsD): TRectD; overload;
 
 function InflateRect(const rec: TRect64; dx, dy: Int64): TRect64;
 function UnionRects(const rec, rec2: TRect64): TRect64;
+function RotateRectD(const rec: TRectD; angleRad: double): TRectD;
 
 //Area: result is type double to avoid potential integer overflow
 function Area(const path: TPath): Double;
@@ -454,6 +455,48 @@ begin
   inc(result.Right, dx);
   dec(result.Top, dy);
   inc(result.Bottom, dy);
+end;
+//------------------------------------------------------------------------------
+
+procedure RotatePt(var pt: TPointD; const center: TPointD; sinA, cosA: double);
+var
+  tmpX, tmpY: double;
+begin
+  tmpX := pt.X-center.X;
+  tmpY := pt.Y-center.Y;
+  pt.X := tmpX * cosA - tmpY * sinA + center.X;
+  pt.Y := tmpX * sinA + tmpY * cosA + center.Y;
+end;
+//------------------------------------------------------------------------------
+
+function RotateRectD(const rec: TRectD; angleRad: double): TRectD;
+var
+  i: integer;
+  sinA, cosA: double;
+  cp, tl,tr,bl,br: TPointD;
+  pts: TPathD;
+begin
+  setLength(pts, 4);
+  sinA := Sin(-angleRad);
+  cosA := cos(-angleRad);
+  cp.X := (rec.Right + rec.Left) / 2;
+  cp.Y := (rec.Bottom + rec.Top) / 2;
+  pts[0] := PointD(rec.Left, rec.Top);
+  pts[1] := PointD(rec.Right, rec.Top);
+  pts[2] := PointD(rec.Left, rec.Bottom);
+  pts[3] := PointD(rec.Right, rec.Bottom);
+  for i := 0 to 3 do RotatePt(pts[i], cp, sinA, cosA);
+  result.Left := pts[0].X;
+  result.Right := result.Left;
+  result.Top := pts[0].Y;
+  result.Bottom := result.Top;
+  for i := 1 to 3 do
+  begin
+    if pts[i].X < result.Left then result.Left := pts[i].X;
+    if pts[i].Y < result.Top then result.Top := pts[i].Y;
+    if pts[i].X > result.Right then result.Right := pts[i].X;
+    if pts[i].Y > result.Bottom then result.Bottom := pts[i].Y;
+  end;
 end;
 //------------------------------------------------------------------------------
 
