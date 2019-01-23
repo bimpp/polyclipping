@@ -3,7 +3,7 @@ unit Bitmap32;
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  1.0                                                             *
-* Date      :  21 January 2019                                                 *
+* Date      :  24 January 2019                                                 *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Module to maniputlate 32bit images                              *
@@ -22,9 +22,23 @@ uses
 type
   PColor32 = ^TColor32;
   TColor32 = Cardinal;
+
   PColor32Array = ^TColor32Array;
   TColor32Array = array of TColor32;
   TArrayOfInteger = array of integer;
+  TArrayOfByte = array of byte;
+
+  TBitmap32ExtClass = class of TBitmap32Ext;
+  TBitmap32 = class;
+
+  //TBitmap32Ext abstract base class that templates
+  //access to multiple image file formats ...
+  TBitmap32Ext = class
+    class function SaveToFile(const filename: string;
+      bmp32: TBitmap32): Boolean; virtual; abstract;
+    class function LoadFromFile(const filename: string;
+      bmp32: TBitmap32): Boolean; virtual; abstract;
+  end;
 
   TBitmap32 = class
   private
@@ -38,12 +52,16 @@ type
     procedure SetPixel(x,y: integer; color: TColor32);
     function GetWeightedPixel(x256, y256: integer): TColor32;
     function GetIsEmpty: Boolean; {$IFDEF INLINING} inline; {$ENDIF}
+    function GetPixelBase: PColor32;
     function DoResizeAA(newWidth, newHeight: integer): TColor32Array;
     function DoResize(newWidth, newHeight: integer): TColor32Array;
+    function CountColors: integer;
   public
     constructor Create(width: integer = 0;
       height: integer = 0; bits: Pointer = nil); virtual;
     destructor Destroy; override;
+    class procedure RegisterExtension(const ext: string;
+      bm32ExClass: TBitmap32ExtClass);
     procedure Fill(color: TColor32); {$IFDEF INLINING} inline; {$ENDIF}
     procedure FillRect(rec: TRect; color: TColor32);
     procedure Insert(x,y: integer; image: TBitmap32);
@@ -51,23 +69,27 @@ type
     procedure CropTransparentPixels;
     procedure AssignTo(dst: TBitmap32);
     procedure DrawTo(dst: TBitmap32);          //scales image to 'dst' size
-    procedure SetSize(width, height: integer); //clears image
+    procedure SetSize(width, height: integer; zeroFill: Boolean = true);
     procedure Resize(width, height: integer);  //scales image
     procedure Scale(value: single);            //scales maintaining proportions
     procedure Rotate(angleRads: single);
     procedure FlipVertical;
     procedure FlipHorizontal;
-    //SaveToFile: will always be in 32bit pixel format
-    procedure SaveToFile(const filename: string);
-    //LoadFromFile: pretty much all but compressed image formats
-    procedure LoadFromFile(const filename: string);
+
+    //SaveToFile: requires a TBitmap32Ext - see RegisterExtension() above
+    function SaveToFile(const filename: string): Boolean;
+    //LoadFromFile: requires a TBitmap32Ext - see RegisterExtension() above
+    function LoadFromFile(const filename: string): Boolean;
+
     //properties ...
     property Width: integer read fWidth;
     property Height: integer read fHeight;
     property IsEmpty: Boolean read GetIsEmpty;
     property Pixel[x,y: integer]: TColor32 read GetPixel write SetPixel;
     property Pixels: TColor32Array read fPixels;
+    property PixelBase: PColor32 read GetPixelBase;
     property PixelRow[idx: integer]: PColor32 read GetPixelRow;
+    property ColorCount: integer read CountColors;
     property EnableAntiAliase: Boolean read fAntiAliase write fAntiAliase;
   end;
 
@@ -78,27 +100,27 @@ type
       true : (Color: TColor32);
   end;
 
-  PQuadColor32 = ^TQuadColor32;
-  TQuadColor32 = array [0..3] of TColor32;
+  PTriColor32 = ^TTriColor32;
+  TTriColor32 = array [0..2] of TColor32;
 
   function MakeLighter(color: TColor32; percent: integer): TColor32;
   function MakeDarker(color: TColor32; percent: integer): TColor32;
 
 const
-  clAqua32     : TColor32 = $FF00FFFF;
-  clBlack32    : TColor32 = $FF000000;
-  clBlue32     : TColor32 = $FF0000FF;
-  clFuchsia32  : TColor32 = $FFFF00FF;
-  clGray32     : TColor32 = $FF808080;
-  clGreen32    : TColor32 = $FF008000;
-  clLime32     : TColor32 = $FF00FF00;
-  clMaroon32   : TColor32 = $FF000080;
-  clNavy32     : TColor32 = $FF000080;
-  clNone32     : TColor32 = $00000000;
-  clRed32      : TColor32 = $FFFF0000;
-  clSilver32   : TColor32 = $FFC0C0C0;
-  clWhite32    : TColor32 = $FFFFFFFF;
-  clYellow32   : TColor32 = $FFFFFF00;
+  clAqua32     = TColor32($FF00FFFF);
+  clBlack32    = TColor32($FF000000);
+  clBlue32     = TColor32($FF0000FF);
+  clFuchsia32  = TColor32($FFFF00FF);
+  clGray32     = TColor32($FF808080);
+  clGreen32    = TColor32($FF008000);
+  clLime32     = TColor32($FF00FF00);
+  clMaroon32   = TColor32($FF000080);
+  clNavy32     = TColor32($FF000080);
+  clNone32     = TColor32($00000000);
+  clRed32      = TColor32($FFFF0000);
+  clSilver32   = TColor32($FFC0C0C0);
+  clWhite32    = TColor32($FFFFFFFF);
+  clYellow32   = TColor32($FFFFFF00);
 
 implementation
 
@@ -117,17 +139,20 @@ type
     function GetColor: TColor32;
   public
     procedure Reset;
+    procedure AddWeight(weight: cardinal);
     procedure Add(c: TColor32; weight: cardinal);
     property AddCount: cardinal read fAddCount;
     property Color: TColor32 read GetColor;
   end;
 
-type
   TPointD = record X, Y: double; end;
   TPathD = array of TPointD;
   TRectD = record Left, Top, Right, Bottom: double; end;
 
-  //------------------------------------------------------------------------------
+var
+  Bitmap32ExtClassList: TStringList;
+
+//------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 
 function MakeLighter(color: TColor32; percent: integer): TColor32;
@@ -225,9 +250,9 @@ constructor TBitmap32.Create(width: integer = 0;
   height: integer = 0; bits: Pointer = nil);
 begin
   fAntiAliase := true;
-  SetSize(width, height);
+  SetSize(width, height, bits = nil);
   if (width > 0) and (height > 0) and assigned(bits) then
-    Move(bits^, fPixels[0], width * height * 4);
+    Move(bits^, fPixels[0], width * height * sizeof(TColor32));
 end;
 //------------------------------------------------------------------------------
 
@@ -235,6 +260,20 @@ destructor TBitmap32.Destroy;
 begin
   fPixels := nil;
   inherited;
+end;
+//------------------------------------------------------------------------------
+
+class procedure TBitmap32.RegisterExtension(const ext: string;
+  bm32ExClass: TBitmap32ExtClass);
+var
+  idx: integer;
+  ex: string;
+begin
+  ex := lowercase(ext);
+  if ex = '' then Exit
+  else if ext[1] = '.' then Delete(ex, 1,1);
+  if Bitmap32ExtClassList.Find(ex, idx) then Exit;
+  Bitmap32ExtClassList.AddObject(ex, Pointer(bm32ExClass));
 end;
 //------------------------------------------------------------------------------
 
@@ -315,7 +354,7 @@ begin
   begin
     c := @Pixels[i * Width + dstRec.Left];
     move(image.Pixels[(srcRec.Top + j) * image.Width + srcRec.Left],
-      c^, (dstRec.Right - dstRec.Left) * 4);
+      c^, (dstRec.Right - dstRec.Left) * sizeof(TColor32));
     inc(j);
   end;
 end;
@@ -339,7 +378,7 @@ begin
     for i := Height-rec.Bottom to Height-rec.Top-1 do
     begin
       c := @Pixels[i * Width + rec.Left];
-      move(c^, newPixels[(i-Height+rec.Bottom) * w], w * 4);
+      move(c^, newPixels[(i-Height+rec.Bottom) * w], w * sizeof(TColor32));
     end;
     Resize(w,h);
     fPixels := newPixels;
@@ -403,18 +442,18 @@ end;
 
 procedure TBitmap32.AssignTo(dst: TBitmap32);
 begin
-  dst.SetSize(width, height);
+  dst.SetSize(width, height, false);
   if (width > 0) and (height > 0) then
     move(fPixels[0], dst.fPixels[0], width * height * sizeof(TColor32));
 end;
 //------------------------------------------------------------------------------
 
-procedure TBitmap32.SetSize(width, height: integer);
+procedure TBitmap32.SetSize(width, height: integer; zeroFill: Boolean);
 begin
   fwidth := width;
   fheight := height;
   setLength(fPixels, width * height);
-  if (width > 0) and (height > 0) then
+  if zeroFill and (width > 0) and (height > 0) then
     FillChar(fPixels[0], width * height * Sizeof(TColor32), 0);
 end;
 //------------------------------------------------------------------------------
@@ -443,12 +482,12 @@ var
   x, y, srcX, srcY: integer;
   scaledXi, scaledYi: TArrayOfInteger;
 begin
-  SetLength(result, newWidth * newHeight * 4);
+  SetLength(result, newWidth * newHeight * sizeof(TColor32));
   if (fWidth = 0) or (fHeight = 0) or (newWidth = 0) or (newHeight = 0) then
     Exit
   else if ((fWidth = newWidth) and (fHeight = newHeight)) then
   begin
-    Move(fPixels[0], result[0], newWidth * newHeight * 4);
+    Move(fPixels[0], result[0], newWidth * newHeight * sizeof(TColor32));
     Exit;
   end;
 
@@ -478,14 +517,14 @@ var
   x,y, x256,y256,xx256,yy256: integer;
   xx,yy, sx,sy: double;
 begin
-  SetLength(result, newWidth * newHeight * 4);
+  SetLength(result, newWidth * newHeight);
 
   if (fWidth = 0) or (fHeight = 0) or
     (newWidth = 0) or (newHeight = 0) then Exit
 
   else if ((fWidth = newWidth) and (fHeight = newHeight)) then
   begin
-    Move(fPixels[0], result[0], newWidth * newHeight * 4);
+    Move(fPixels[0], result[0], newWidth * newHeight * sizeof(TColor32));
     Exit;
   end;
 
@@ -589,22 +628,22 @@ begin
   color.Reset;
   weight := (($100 - xf) * ($100 - yf)) shr 8;         //top-left
   if (x256 < 0) or (y256 < 0) then
-    color.Add(clNone32, weight) else
+    color.AddWeight(weight) else
     color.Add(fPixels[xi + yi * fWidth], weight);
 
   weight := (xf * ($100 - yf)) shr 8;                  //top-right
   if (xi + 1 >= fWidth) or (y256 < 0) then
-    color.Add(clNone32, weight) else
+    color.AddWeight(weight) else
     color.Add(fPixels[xi + 1 + yi * fWidth], weight);
 
   weight := (($100 - xf) * yf) shr 8;                  //bottom-left
   if (x256 < 0) or (yi + 1 = fHeight) then
-    color.Add(clNone32, weight) else
+    color.AddWeight(weight) else
     color.Add(fPixels[xi + (yi +1) * fWidth], weight);
 
   weight := (xf * yf) shr 8;                           //bottom-right
   if (xi + 1 >= fWidth) or (yi + 1 = fHeight) then
-    color.Add(clNone32, weight) else
+    color.AddWeight(weight) else
     color.Add(fPixels[(xi + 1)  + (yi + 1) * fWidth], weight);
   Result := color.Color;
 end;
@@ -617,6 +656,7 @@ var
   sinA, cosA, dx, dy: double;
   pt, cp, cp2: TPointD;
   rec: TRectD;
+  dstColor: PColor32;
 begin
   if IsEmpty then Exit;
   sinA := Sin(-angleRads); cosA := cos(-angleRads);
@@ -627,18 +667,38 @@ begin
   newWidth := Ceil(rec.Right - rec.Left);
   newHeight := Ceil(rec.Bottom - rec.Top);
   cp2 := PointD(newWidth / 2, newHeight / 2);
-  SetLength(tmp, newWidth * newHeight * 4);
+  SetLength(tmp, newWidth * newHeight);
+  dstColor := @tmp[0];
   dx := (newWidth - fWidth) / 2;
   dy := (newHeight - fHeight) / 2;
-  for y := 0 to newHeight do
-    for x := 0 to newWidth do
-    begin
-      pt := PointD(x, y);
-      RotatePt(pt, cp2, sinA, cosA);
-      xi := Round((pt.X - dx) * 256);
-      yi := Round((pt.Y - dy) * 256);
-      tmp[y * newWidth + x] := GetWeightedPixel(xi, yi);
-    end;
+  if EnableAntiAliase then
+  begin
+    for y := 0 to newHeight -1 do
+      for x := 0 to newWidth -1 do
+      begin
+        pt := PointD(x, y);
+        RotatePt(pt, cp2, sinA, cosA);
+        xi := Round((pt.X - dx) * 256);
+        yi := Round((pt.Y - dy) * 256);
+        dstColor^ := GetWeightedPixel(xi, yi);
+        inc(dstColor);
+      end;
+  end else
+  begin
+    for y := 0 to newHeight -1 do
+      for x := 0 to newWidth -1 do
+      begin
+        pt := PointD(x, y);
+        RotatePt(pt, cp2, sinA, cosA);
+        xi := Round(pt.X - dx);
+        yi := Round(pt.Y - dy);
+        if (xi < 0) or (xi >= Width) or (yi < 0) or (yi >= Height) then
+          dstColor^ := clNone32
+        else
+          dstColor^ := fPixels[xi + yi * Width];
+        inc(dstColor);
+      end;
+  end;
   fPixels := tmp;
   fWidth := newWidth;
   fHeight := newHeight;
@@ -656,7 +716,7 @@ begin
   for i := 0 to fHeight -1 do
   begin
     row := GetPixelRow(i);
-    move(row^, a[i * fWidth], fWidth * 4);
+    move(row^, a[i * fWidth], fWidth * sizeof(TColor32));
   end;
   fPixels := a;
 end;
@@ -674,7 +734,7 @@ begin
   for i := 0 to fHeight -1 do
   begin
     row := GetPixelRow(i);
-    move(row^, a[0], fWidth * 4);
+    move(row^, a[0], fWidth * sizeof(TColor32));
     for j := 0 to widthLess1 do
     begin
       row^ := a[widthLess1 - j];
@@ -684,238 +744,59 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-procedure TBitmap32.SaveToFile(const filename: string);
+function TBitmap32.CountColors: integer;
 var
-  BH: TBitmapFileHeader;
-  BI: TBitmapInfoHeader;
+  allColors: TArrayOfByte;
+  i,j: integer;
+  c: PColor32;
+const
+  two24 = 256 * 256 * 256;
 begin
-  FillChar(BH, sizeof(BH), #0);
-  BH.bfType := $4D42;
-  BH.bfOffBits := sizeof(BI) + sizeof(BH);
-  BH.bfSize := BH.bfOffBits + Cardinal(Length(fPixels)) * 4;
-  FillChar(BI, sizeof(BI), #0);
-  BI.biSize := sizeof(BI);
-  BI.biWidth := Width;
-  BI.biHeight := Height;
-  BI.biPlanes := 1;
-  BI.biBitCount := 32;
-  BI.biSizeImage := Width * Height * 4;
-  BI.biCompression := BI_RGB;
-  with TFileStream.Create(filename, fmCreate) do
-  try
-    Write(BH, sizeof(BH));
-    Write(BI, sizeof(BI));
-    Write(fPixels[0], Length(fPixels) * 4);
-  finally
-    Free;
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function ReadPalette(stream: TStream; size: integer): TColor32Array;
-var
-  i: integer;
-  c: TARGB;
-begin
-  setLength(Result, size);
-  for i := 0 to size -1 do
+  result := 0;
+  if IsEmpty then Exit;
+  SetLength(allColors, two24);
+  fillChar(allColors[0], two24, 0);
+  c := PixelBase;
+  for i := 0 to Width * Height -1 do
   begin
-    stream.Read(c, 4);
-    with c do result[i] := $FF000000 + R shl 16 + G shl 8 + B;
+    with PARGB(c)^ do j := (R shl 16) + (G shl 8) + B;
+    allColors[j] := 1;
+    inc(c);
   end;
+  for i := 0 to two24 -1 do
+    if allColors[i] = 1 then inc(Result);
 end;
 //------------------------------------------------------------------------------
 
-function ReadPixels(stream: TStream; width, height,
-  bpp: integer; bitfield: TQuadColor32): TColor32Array;
+function TBitmap32.SaveToFile(const filename: string): Boolean;
 var
-  i,j,bytesPerRow, bytesPerPix: integer;
-  shift, size: TQuadColor32;
-  buffer: PByte;
-  b: PCardinal;
+  idx: integer;
+  ext: string;
+  bitmap32ExtClass: TBitmap32ExtClass;
 begin
-
-  //from the bitfield masks, get R, G & B color offsets and sizes
-  for i := 0 to 2 do //ie ignore alpha pro tem.
-  begin
-    size[i] := 0;
-    shift[i] := 0;
-    for j := 0 to 31 do
-      if (size[i] > 0) then
-      begin
-        if bitfield[i] and (1 shl j) > 0 then inc(size[i])
-        else break;
-      end else if bitfield[i] and (1 shl j) > 0 then
-      begin
-        shift[i] := j;
-        size[i] := 1;
-      end;
-  end;
-  //colorXBit.R = (buffer^ and bitfield[0]) shr shift[0]
-  //and so to convert colorXBit.R to color32bit.R ...
-  //color32bit.R = colorXBit.R * 255 div (1 shl size[0] -1)
-  for i := 0 to 2 do size[i] := (1 shl size[i]) - 1;
-  //now ... color32bit.R = colorXBit.R * 255 div size[0]
-
-  bytesPerPix := bpp div 8;
-  bytesPerRow := ((31 + bpp * width) div 32) * 4;
-  setLength(Result, width * height);
-  GetMem(buffer, bytesPerRow);
-  try
-    for i := 0 to height -1 do
-    begin
-      stream.Read(buffer^, bytesPerRow);
-      b := PCardinal(buffer);
-      for j := 0 to width -1 do
-      begin
-        result[j + i * width] :=
-          $FF000000 +
-          (((b^ and bitfield[0]) shr shift[0]) * 255 div size[0]) shl 16 +
-          (((b^ and bitfield[1]) shr shift[1]) * 255 div size[1]) shl 8 +
-          (((b^ and bitfield[2]) shr shift[2]) * 255 div size[2]);
-        inc(PByte(b), bytesPerPix);
-      end;
-    end;
-  finally
-    FreeMem(buffer);
-  end;
+  result := false;
+  ext := Lowercase(ExtractFileExt(filename));
+  if ext = '' then Exit;
+  if ext[1] = '.' then Delete(ext, 1,1);
+  if not Bitmap32ExtClassList.Find(ext, idx) then Exit;
+  bitmap32ExtClass := TBitmap32ExtClass(Bitmap32ExtClassList.Objects[idx]);
+  result := bitmap32ExtClass.SaveToFile(filename, self);
 end;
 //------------------------------------------------------------------------------
 
-function ReadPixelsWithPal(stream: TStream; width, height, bpp: integer;
-  const palette: TColor32Array): TColor32Array;
+function TBitmap32.LoadFromFile(const filename: string): Boolean;
 var
-  i,j,bytesPerRow, palHigh, pxCnt: integer;
-  buffer, b: PByte;
-  c, shift: byte;
+  idx: integer;
+  ext: string;
+  bitmap32ExtClass: TBitmap32ExtClass;
 begin
-  shift := 8 - bpp;
-  bytesPerRow := ((31 + bpp * width) div 32) * 4;
-  setLength(Result, width * height);
-  palHigh := High(palette);
-  GetMem(buffer, bytesPerRow);
-  try
-    for i := 0 to height -1 do
-    begin
-      stream.Read(buffer^, bytesPerRow);
-      b := buffer;
-      pxCnt := 0;
-      for j := 0 to width -1 do
-      begin
-        pxCnt := (pxCnt + bpp) mod 8;
-        c := b^ shr shift;
-        if c > palHigh then
-          result[j + i * width] := clBlack32
-        else result[j + i * width] := palette[c];
-        if  pxCnt = 0 then inc(b)
-        else b^ := b^ shl bpp;
-      end;
-    end;
-  finally
-    FreeMem(buffer);
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function ValidateBitFields(const bitFields: TQuadColor32): boolean;
-begin
-  //make sure each color channel has a mask and that they don't overlap ...
-  result := (bitFields[0] <> 0) and (bitFields[1] <> 0) and
-    (bitFields[2] <> 0) and (bitFields[0] and bitFields[1] = 0) and
-    (bitFields[0] and bitFields[2] = 0) and (bitFields[1] and bitFields[2] = 0);
-end;
-//------------------------------------------------------------------------------
-
-procedure TBitmap32.LoadFromFile(const filename: string);
-var
-  bytesPerRow: integer;
-  BH: TBitmapFileHeader;
-  BI: TBitmapInfoHeader;
-  fileStream: TFileStream;
-  pal: TColor32Array;
-  bitfields: TQuadColor32;
-  topdown: boolean;
-begin
-  if not FileExists(filename) then Exit;
-  fileStream := TFileStream.Create(filename, fmOpenRead or fmShareDenyWrite);
-  with fileStream do
-  try
-    if Size < sizeof(BH) + sizeof(BI) then Exit;
-    Read(BH, sizeof(BH));
-    Read(BI, sizeof(BI));
-
-    topdown := BI.biHeight < 0;
-    BI.biHeight := abs(BI.biHeight);
-    bytesPerRow := ((31 + BI.biBitCount * BI.biWidth) div 32) * 4;
-
-    if ( fileStream.Size <
-      (sizeof(BH) + sizeof(BI) + bytesPerRow * BI.biHeight) ) or
-      (BH.bfType <> $4D42) or
-      (BI.biSize < sizeof(BITMAPCOREHEADER)) then Exit;
-
-    if BI.biSize = sizeof(BITMAPCOREHEADER) then
-    begin
-      BI.biBitCount := PBitmapCoreHeader(@BI).bcBitCount;
-      BI.biHeight := PBitmapCoreHeader(@BI).bcHeight;
-      BI.biWidth := PBitmapCoreHeader(@BI).bcWidth;
-      BI.biCompression := 0;
-      BI.biClrUsed := 0;
-      BI.biClrImportant := 0;
-    end;
-    if ((BI.biCompression <> 0) and (BI.biCompression <> 3)) then Exit;
-
-    Position := sizeof(BH) + BI.biSize;
-    if BI.biBitCount = 32 then
-    begin
-      SetSize(BI.biWidth, BI.biHeight);
-      Read(fPixels[0], BI.biWidth * BI.biHeight * 4);
-    end else
-    begin
-      fWidth := BI.biWidth;
-      fHeight := BI.biHeight;
-      if (BI.biClrUsed = 0) and (BI.biBitCount < 15) then
-        BI.biClrUsed := Trunc(Power(2, BI.biBitCount));
-      if (BI.biClrImportant = 0) then BI.biClrImportant := BI.biClrUsed;
-      if (BI.biBitCount >= 16) or (BI.biClrImportant = 0) then
-      begin
-        bitfields[0] := 0;
-        if ((BI.biCompression and BI_BITFIELDS) = BI_BITFIELDS) then
-        begin
-          fileStream.Position := 52;
-          fileStream.Read(bitfields[0], Sizeof(TQuadColor32));
-        end;
-        if not ValidateBitFields(bitfields) then
-        begin
-          if BI.biBitCount = 24 then
-          begin
-            bitfields[0] := $FF shl 16;
-            bitfields[1] := $FF shl 8;
-            bitfields[2] := $FF;
-            bitfields[3] := Cardinal($FF) shl 24;
-          end
-          else //BI.biBitCount = 16
-          begin
-            bitfields[0] := $1F shl 10;
-            bitfields[1] := $1F shl 5;
-            bitfields[2] := $1F;
-            bitfields[3] := Cardinal($FF) shl 24;
-          end;
-        end;
-        fileStream.Position := BH.bfOffBits;
-        fPixels := ReadPixels(fileStream,
-          fWidth, fHeight, BI.biBitCount, bitfields);
-      end else
-      begin
-        pal := ReadPalette(fileStream, BI.biClrUsed);
-        fileStream.Position := BH.bfOffBits;
-        fPixels := ReadPixelsWithPal(fileStream,
-          fWidth, fHeight, BI.biBitCount, pal);
-      end;
-    end;
-    if topdown then FlipVertical;
-  finally
-    Free;
-  end;
+  result := false;
+  ext := Lowercase(ExtractFileExt(filename));
+  if ext = '' then Exit;
+  if ext[1] = '.' then Delete(ext, 1,1);
+  if not Bitmap32ExtClassList.Find(ext, idx) then Exit;
+  bitmap32ExtClass := TBitmap32ExtClass(Bitmap32ExtClassList.Objects[idx]);
+  result := bitmap32ExtClass.LoadFromFile(filename, self);
 end;
 //------------------------------------------------------------------------------
 
@@ -944,16 +825,24 @@ begin
 end;
 //------------------------------------------------------------------------------
 
+function TBitmap32.GetPixelBase: PColor32;
+begin
+  if IsEmpty then result := nil
+  else result := @fPixels[0];
+end;
+//------------------------------------------------------------------------------
+
 procedure TBitmap32.DrawTo(dst: TBitmap32);
 begin
   if (dst = self) then Exit;
 
   //if bmDest is empty then assume a simple copy ...
-  if dst.IsEmpty then dst.SetSize(width, height);
+  if dst.IsEmpty then dst.SetSize(width, height, false);
   if (dst.Width = Width) and (dst.Height = Height) then
   begin
+    //do simple copy...
     if not IsEmpty then
-      Move(fPixels[0], dst.fPixels[0], Length(fPixels) * 4); //straight copy
+      Move(fPixels[0], dst.fPixels[0], Length(fPixels) * sizeof(TColor32));
   end
   else if fAntiAliase then
     dst.fPixels := DoResizeAA(dst.Width, dst.Height)
@@ -972,6 +861,12 @@ begin
   fColorTotR := 0;
   fColorTotG := 0;
   fColorTotB := 0;
+end;
+//------------------------------------------------------------------------------
+
+procedure TWeightedColor.AddWeight(weight: cardinal);
+begin
+  inc(fAddCount, weight);
 end;
 //------------------------------------------------------------------------------
 
@@ -1015,6 +910,13 @@ begin
   argb.G := (fColorTotG + halfAlphaTot) div fAlphaTot;
   argb.B := (fColorTotB + halfAlphaTot) div fAlphaTot;
 end;
+
 //------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+
+initialization
+  Bitmap32ExtClassList := TStringList.Create;
+finalization
+  Bitmap32ExtClassList.Free;
 
 end.
