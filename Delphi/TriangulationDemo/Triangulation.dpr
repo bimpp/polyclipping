@@ -1,6 +1,5 @@
 program Triangulation;
 
-
 {$R main.res}
 {$R winxp.res}
 
@@ -19,8 +18,9 @@ uses
   ClipperTri in '..\ClipperTri.pas',
   ClipperText in '..\ClipperText.pas',
   ClipperOffset in '..\ClipperOffset.pas',
-  Bitmap32 in 'Bitmap32.pas',
-  OglUltraLite2D in 'OglUltraLite2D.pas';
+  Bitmap32 in '..\Bitmap32.pas',
+  Bitmap32_BMP in '..\Bitmap32_BMP.pas',
+  OglUltraLite2D in '..\OglUltraLite2D.pas';
 
 {$WARN SYMBOL_PLATFORM OFF}
 
@@ -30,7 +30,7 @@ type
 
 const
   defaultSize: TSize = (cx:1200; cy: 800);
-  backgroundColor: TColor32 = $FFF7F7F5; //off-white
+  backgroundColor: TColor32 = $FFFFFFFF;//$FFF7F7F5; //off-white
   max_colors = 16;
   arrowCursor = 0;
   waitCursor  = 1;
@@ -39,9 +39,9 @@ const
   nonsense: string = 'The quick brown fox jumps over the lazy dog.';
 var
   mainHdl, statusHdl, menuHdl, customHdl: HWND;
-  glrc: HGLRC;                              //handle to OpenGL rendering context
-  szTitle: array [0 .. 256] of CHAR;        //The title bar text
-  szWindowClass: array [0 .. 256] of CHAR;  //the main window class name
+  glrc1: HGLRC;                            //handle to GL rendering context
+  szTitle: array [0 .. 256] of CHAR;       //The title bar text
+  szWindowClass: array [0 .. 256] of CHAR; //the main window class name
   cursors: array [0..1] of HCURSOR;
   subj, clip, solution, subjTri, clipTri, solutionTri: TPaths;
   clientwidth, clientheight: WORD;
@@ -50,6 +50,8 @@ var
   colors: array [0..max_colors-1] of Cardinal;  //for multi-color solutions
 
   simpleFontlib, fancyFontlib: TOglFontLib;     //see OglUltraLite2D
+  mainBmp: TBitmap32;
+  redrawNeeded: Boolean;
 
   //lcdText: Enables sub-pixel font rendering.
   // * Enabled: text will appear slightly crisper but with some color bleading
@@ -147,6 +149,38 @@ begin
 end;
 //==============================================================================
 
+function MakeLighter(color: TColor32; percent: integer): TColor32;
+var
+  src: TARGB absolute color;
+  dst: TARGB absolute result;
+begin
+  //ideally we'd convert color to HSL format before adjusting luminence
+  //but for most purposes the following is close enough :)
+  if percent < 0 then percent := 0
+  else if percent > 100 then percent := 100;
+  dst.A := src.A;
+  dst.R := src.R + MulDiv(255 - src.R, percent, 100);
+  dst.G := src.G + MulDiv(255 - src.G, percent, 100);
+  dst.B := src.B + MulDiv(255 - src.B, percent, 100);
+end;
+//------------------------------------------------------------------------------
+
+function MakeDarker(color: TColor32; percent: integer): TColor32;
+var
+  src: TARGB absolute color;
+  dst: TARGB absolute result;
+begin
+  //ideally we'd convert color to HSL format before adjusting luminence
+  //but for most purposes the following is close enough :)
+  if percent < 0 then percent := 0
+  else if percent > 100 then percent := 100;
+  dst.A := src.A;
+  dst.R := src.R - MulDiv(src.R, percent, 100);
+  dst.G := src.G - MulDiv(src.G, percent, 100);
+  dst.B := src.B - MulDiv(src.B, percent, 100);
+end;
+//------------------------------------------------------------------------------
+
 procedure FillMultiColor(const triangles: TPaths; offset, scale: TPointD);
 var
   i, j, color_idx: integer;
@@ -154,7 +188,7 @@ begin
   color_idx := 0;
   for i := 0 to high(triangles) do
   begin
-    oglColor(colors[color_idx]);
+    oglColor(colors[color_idx] or $EE000000);
     color_idx := (color_idx + 1) mod max_colors;
     glBegin(GL_TRIANGLES);
     for j := 0 to high(triangles[i]) do
@@ -186,31 +220,32 @@ begin
   offset.Y := Round((clientheight -
     (rec.Bottom-rec.Top) * scale.Y)/2 - rec.Top * scale.Y);
 
+  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
   if clip_type <> ctUnion then
   begin
     //draw the subject polygons ...
     if assigned(subj) then
     begin
-      Line(subj, offset, scale, 0.3, $40000033, false);
       Fill(subjTri, offset, scale, $100000FF);
+      Line(subj, offset, scale, 0.3, $AA000033, false);
     end;
 
     //draw the clip polygons ...
     if assigned(clip) then
     begin
-      Line(clip, offset, scale, 0.3, $40333300, false);
       Fill(clipTri, offset, scale, $20AAAA00);
+      Line(clip, offset, scale, 0.3, $AA333300, false);
     end;
   end;
 
   //draw the polygons in the clip solution ...
-  if assigned(solution) then
+  if assigned(solution) and (clip_type <> ctNone) then
   begin
 
     //draw a soft '3D' shadow under the solution ...
-    dx := ceil(2.5 / scale.X);
+    dx := ceil(3.5 / scale.X);
     solutionTri := OffsetPaths(solutionTri, dx, dx);
-    Fill(solutionTri, offset, scale, $40000000);
+    Fill(solutionTri, offset, scale, $60000000);
     solutionTri := OffsetPaths(solutionTri, -dx,-dx);
 
     if multiColorBrush then
@@ -301,6 +336,8 @@ begin
   glDisable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, 0);
   glDeleteTextures(1, @textures);
+
+  //returns the Rect bounding the drawn text
 end;
 //------------------------------------------------------------------------------
 
@@ -314,10 +351,10 @@ var
   s: string;
   c: TColor32;
 begin
-  linewidth := DPIScale(16);
+  linewidth := DPIScale(10);
   lwDiv3 := linewidth div 3;
 
-  //1. make up 5 random characters ...
+  //1. make up some random characters ...
   setlength(s, 5);
   for i := 1 to 5 do s[i] := Char(Random(94)+33);
   c := colors[Random(max_colors)] or $FF000000;
@@ -392,29 +429,95 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-procedure Draw(dc: HDC);
+procedure PrepareOffScreenBmp;
 var
-  rec: TRect;
+  i, linewidth, lwDiv3: integer;
+  triangles: TPaths;
+  textures: GLuint;
+  fbos: GLuint;
+  view: TRect;
+  rec: TRectD;
 begin
-  oglClearColor(backgroundColor);
-  glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glLineWidth(1.0);
-  if not oglExtensionsInstalled then Exit;
+  //set up the texture and frame buffers for drawing ...
+  glGenTextures(1, @textures);
+  glBindTexture(GL_TEXTURE_2D, textures);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainBmp.Width, mainBmp.Height,
+    0, GL_BGRA, GL_UNSIGNED_BYTE, nil);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
+  glGenFramebuffers(1, @fbos);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbos);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+    GL_TEXTURE_2D, textures, 0);
+  glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT);
+  glLineWidth(1.0);
+
+  //do the drawing ...
   if show_polygons then
-    DrawPolygons
-  else
+  begin
+    DrawPolygons;
+  end else
   begin
     lcdText := true;
-    DrawSimpleText(clientwidth - 20, clientheight -20, nonsense,
+    rec := DrawSimpleText(clientwidth - 20, clientheight -20, nonsense,
       taBottomRight, $FF000033, 1,1);
     lcdText := false;
+    rec := DrawSimpleText(clientwidth - 20, trunc(rec.Top), nonsense,
+      taBottomRight, $FF000033, 1,1);
+
     DrawSimpleText(clientwidth div 2, clientHeight div 2,
       'just some background text to demonstrate transparency',
       taCenterCenter, $AA000000, 1.5, 5);
+
     DrawOutlineText;
   end;
+
+  //save the openGL canvas to mainBmp ...
+  glReadPixels(0,0, mainBmp.Width, mainBmp.Height,
+    GL_BGRA, GL_UNSIGNED_BYTE, mainBmp.Pixels);
+
+  mainBmp.SaveToFile('demo.bmp');
+  redrawNeeded := false;
+
+   //clean up ...
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glDeleteFramebuffers(1, @fbos);
+  glDeleteTextures(1, @textures);
+end;
+//------------------------------------------------------------------------------
+
+procedure Draw(dc: HDC);
+var
+  textures: GLuint;
+begin
+  oglClearColor(backgroundColor);
+  glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT);
+
+  if not oglExtensionsInstalled then Exit;
+  if redrawNeeded then PrepareOffScreenBmp;
+
+  glGenTextures(1, @textures);
+  //load mainBmp into textures and draw it ...
+  glBindTexture(GL_TEXTURE_2D, textures);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainBmp.Width, mainBmp.Height, 0,
+    GL_BGRA, GL_UNSIGNED_BYTE, mainBmp.Pixels);
+  glEnable(GL_TEXTURE_2D);
+  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+  glBegin(GL_QUADS);
+    glTexCoord2i(0,1); glVertex2i(0, 0);
+    glTexCoord2i(1,1); glVertex2i(mainBmp.width, 0);
+    glTexCoord2i(1,0); glVertex2i(mainBmp.width, mainBmp.height);
+    glTexCoord2i(0,0); glVertex2i(0, mainBmp.height);
+  glEnd;
+
+  glDisable(GL_TEXTURE_2D);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDeleteTextures(1, @textures);
 end;
 //------------------------------------------------------------------------------
 
@@ -439,6 +542,7 @@ begin
   clipTri := Union(clip, fill_rule);
   clipTri := Triangulate(clipTri);
   solutionTri := Triangulate(solution);
+  redrawNeeded := true;
 end;
 //------------------------------------------------------------------------------
 
@@ -454,6 +558,7 @@ begin
       edgeCount, roundto, margin);
     UpdateSample;
   end;
+  redrawNeeded := true;
   InvalidateRect(customHdl, nil, true);
 end;
 //------------------------------------------------------------------------------
@@ -547,6 +652,8 @@ begin
   CheckMenuItem(menuHdl, 802, MF_UNCHECKED);
   CheckMenuItem(menuHdl, menuId, MF_CHECKED);
   show_polygons := menuId = 801;
+
+  redrawNeeded := true;
   InvalidateRect(customHdl, nil, true);
 
   //if the display option is text then there are a whole lot
@@ -593,6 +700,7 @@ begin
   if multiColorBrush then
     CheckMenuItem(menuHdl, 400, MF_CHECKED) else
     CheckMenuItem(menuHdl, 400, MF_UNCHECKED);
+  redrawNeeded := true;
   InvalidateRect(mainHdl, nil, true);
 end;
 //-----------------------------------------------------------------------------
@@ -661,6 +769,8 @@ begin
         clientwidth := LOWORD(lparm);
         clientheight := HIWORD(lparm);
         ResetOglViewport(clientwidth, clientheight); //OglUltraLite2D
+        mainBmp.SetSize(clientwidth, clientheight, false);
+        redrawNeeded := true;
         Result := 0;
       end;
     WM_LBUTTONDOWN:
@@ -746,7 +856,8 @@ begin
   i := SetWindowLong(customHdl, GWL_WNDPROC, integer(@CustomProc));
   SetWindowLong(customHdl, GWL_USERDATA, i); //store the old WndProc
 
-  glrc := CreateOglContext(customHdl); //OglUltraLite2D
+  glrc1 := CreateOglContext(customHdl); //OglUltraLite2D
+  mainBmp := TBitmap32.Create;
 
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
@@ -754,7 +865,7 @@ begin
   glEnable(GL_LINE_SMOOTH);
   glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
-  simpleTextFontHeight := DPIScale( -11);
+  simpleTextFontHeight := DPIScale( -11 );
 
   lf               := defaultLogfont;
   lf.lfHeight      := simpleTextFontHeight;
@@ -796,9 +907,10 @@ begin
   end;
 
   //clean up ...
-  DeleteOglContext(glrc); //OglUltraLite2D
+  DeleteOglContext(glrc1); //OglUltraLite2D
   simpleFontlib.Free;
   fancyFontlib.Free;
+  mainBmp.Free;
   AnimateWindow(mainHdl, 500, AW_HIDE or AW_BLEND);
 end.
 

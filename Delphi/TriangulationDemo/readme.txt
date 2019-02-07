@@ -1,3 +1,3 @@
-This demo is intended to showcase Clipper's triangulation.
+This demo is intended to showcase Clipper's triangulation though admittedly it's way more complicated than it should be. (I hope to provide a much simpler demo soon.)
 
-The widely used OpenGL graphics library is a perfect example of why triangulation may be useful. The only way OpenGL can rasterize polygons (including text) is when they've been triangulated. This demo uses both OpenGL and Clipper to display complex polygons. (Requires OpenGL vers 3.0 or higher.)
+Anyhow, the widely used OpenGL graphics library is a perfect example of why triangulation may be useful, since OpenGL will only rasterize polygons (including text) once they've been triangulated. This demo uses both OpenGL and Clipper to display complex polygons. (It requires OpenGL vers 3.0 or higher.)
