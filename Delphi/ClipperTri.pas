@@ -103,9 +103,10 @@ while vLeft <> vRight
 interface
 
 uses
-  Windows, SysUtils, Classes, Math, ClipperCore;
+  Windows, SysUtils, Classes, Math, ClipperCore, Clipper, ClipperEx;
 
-function Triangulate(paths: TPaths): TPaths;
+function Triangulate(paths: TPaths): TPaths; overload;
+function Triangulate(paths: TPathsD): TPathsD; overload;
 
 implementation
 
@@ -192,9 +193,10 @@ type
     procedure DisposeActive2(a: PActive2);
     procedure CleanUp;
   public
-    constructor Create;
+    constructor Create(scalingFraction: double = 0);
     destructor Destroy; override;
-    function Execute(const srcPaths: TPaths; out triangles: TPaths): Boolean;
+    function Execute(const srcPaths: TPaths;
+      out triangles: TPaths): Boolean; overload;
   end;
 
   EClipperExLibException = class(Exception);
@@ -637,7 +639,7 @@ end;
 // TClipperTri methods ...
 //------------------------------------------------------------------------------
 
-constructor TClipperTri.Create;
+constructor TClipperTri.Create(scalingFraction: double);
 begin
   FLocMinList  := TList.Create;
   FOrecList := TList.Create;
@@ -1329,8 +1331,6 @@ begin
     Result := false;
   end;
 end;
-
-//------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 
 function Triangulate(paths: TPaths): TPaths;
@@ -1341,6 +1341,22 @@ begin
   finally
     Free;
   end;
+end;
+//------------------------------------------------------------------------------
+
+function Triangulate(paths: TPathsD): TPathsD;
+var
+  pp, sol: TPaths;
+begin
+  pp := ScalePaths(paths, 1000, 1000);
+  pp := Union(pp, frEvenOdd); //belt and braces (remove later)
+  with TClipperTri.Create do
+  try
+    Execute(pp, sol);
+  finally
+    Free;
+  end;
+  Result := ScalePathsD(sol, 0.001, 0.001);
 end;
 //------------------------------------------------------------------------------
 

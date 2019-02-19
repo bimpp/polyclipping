@@ -3,7 +3,7 @@ unit ClipperEx;
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (pre-alpha)                                                *
-* Date      :  14 January 2019                                                 *
+* Date      :  19 Febuary 2019                                                 *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Removes micro self-intersections and rechecks path orientation. *
@@ -85,22 +85,23 @@ type
   public
     constructor Create; override;
     destructor Destroy; override;
-    function Execute(clipType: TClipType; out closedPaths: TPaths;
-      fillRule: TFillRule = frEvenOdd): Boolean; override;
-    function Execute(clipType: TClipType; out closedPaths, openPaths: TPaths;
-      fillRule: TFillRule = frEvenOdd): Boolean; override;
-    function Execute(clipType: TClipType;
-      var polytree: TPolyTree; out openPaths: TPaths;
-      fillRule: TFillRule = frEvenOdd): Boolean; override;
-    function Execute(clipType: TClipType; out closedPaths: TPathsD;
-      fillRule: TFillRule = frEvenOdd): Boolean; override;
-    function Execute(clipType: TClipType; out closedPaths, openPaths: TPathsD;
-      fillRule: TFillRule = frEvenOdd): Boolean; override;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      out closedPaths: TPaths): Boolean; override;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      out closedPaths, openPaths: TPaths): Boolean; override;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      var polytree: TPolyTree; out openPaths: TPaths): Boolean; override;
   end;
+
+  //TClipperExD = class(TClipperEx)
+  //There's currently no floating point wrapper for TClipperEx because I'll
+  //probably be merging TClipperEx back into TClipper once TClipperEx is fully
+  //functional. In the meantime you'll need to do integer conversions manually.
 
   EClipperExLibException = class(Exception);
 
-  function Union(const paths: TPaths; fr: TFillRule): TPaths;
+  function Union(const paths: TPaths; fr: TFillRule): TPaths; overload;
+  function Union(const paths: TPathsD; fr: TFillRule): TPathsD; overload;
 
 implementation
 
@@ -1355,7 +1356,7 @@ end;
 //------------------------------------------------------------------------------
 
 function TClipperEx.Execute(clipType: TClipType;
-  out closedPaths: TPaths; fillRule: TFillRule): Boolean;
+  fillRule: TFillRule; out closedPaths: TPaths): Boolean;
 var
   dummy: TPaths;
 begin
@@ -1371,8 +1372,8 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function TClipperEx.Execute(clipType: TClipType; out closedPaths, openPaths: TPaths;
-  fillRule: TFillRule = frEvenOdd): Boolean;
+function TClipperEx.Execute(clipType: TClipType; fillRule: TFillRule;
+  out closedPaths, openPaths: TPaths): Boolean;
 begin
   closedPaths := nil;
   openPaths := nil;
@@ -1387,40 +1388,8 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function TClipperEx.Execute(clipType: TClipType; out closedPaths: TPathsD;
-  fillRule: TFillRule = frEvenOdd): Boolean;
-var
-  dummy: TPathsD;
-begin
-  closedPaths := nil;
-  try
-    Result := ExecuteInternal(clipType, fillRule);
-    if not Result then Exit;
-    BuildResultD(closedPaths, dummy);
-  finally
-    CleanUpPath;
-    CleanUp;
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function TClipperEx.Execute(clipType: TClipType; out closedPaths, openPaths: TPathsD;
-  fillRule: TFillRule = frEvenOdd): Boolean;
-begin
-  closedPaths := nil;
-  openPaths := nil;
-  try
-    Result := ExecuteInternal(clipType, fillRule);
-    if Result then  BuildResultD(closedPaths, openPaths);
-  finally
-    CleanUpPath;
-    CleanUp;
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function TClipperEx.Execute(clipType: TClipType; var polytree: TPolyTree;
-  out openPaths: TPaths; fillRule: TFillRule): Boolean;
+function TClipperEx.Execute(clipType: TClipType; fillRule: TFillRule;
+  var polytree: TPolyTree; out openPaths: TPaths): Boolean;
 begin
   openPaths := nil;
   try
@@ -1439,12 +1408,27 @@ begin
   with TClipperEx.Create do
   try
     AddPaths(paths, ptSubject);
-    Execute(ctUnion, result, fr);
+    Execute(ctUnion, fr, result);
   finally
     Free;
   end;
 end;
 //------------------------------------------------------------------------------
 
+function Union(const paths: TPathsD; fr: TFillRule): TPathsD;
+var
+  pp, sol: TPaths;
+begin
+  pp := ScalePaths(paths, 1000, 1000);
+  with TClipperEx.Create do
+  try
+    AddPaths(pp, ptSubject);
+    Execute(ctUnion, fr, sol);
+  finally
+    Free;
+  end;
+  Result := ScalePathsD(sol, 0.001, 0.001);
+end;
+//------------------------------------------------------------------------------
 
 end.

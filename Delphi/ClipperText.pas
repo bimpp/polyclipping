@@ -20,8 +20,6 @@ type
 
 {$IFNDEF UNICODE}PByte = PChar;{$ENDIF}
 
-function GetCharInfo(c: Char;
-  trueTypeFont: HFont; out metrics: TGlyphMetrics): TPaths;
 function GetCharInfos(s: string;
   trueTypeFont: HFont; out metrics: TGlyphMetricsArray): TArrayOfPaths;
 
@@ -30,6 +28,7 @@ function TextToPaths(const text: string;
 function TextToPathsD(const text: string;
   x, y: Int64; trueTypeFont: HFont; out gma: TGlyphMetricsArray): TPathsD;
 function FixedToRect64(const rec: TRect64): TRect64;
+function FixedToRect(const rec: TRect64): TRect;
 
 implementation
 
@@ -51,6 +50,9 @@ const
   cbezier_tolerance = $1000;
   qbezier_tolerance = $1000;
   buff_size         = 128;
+  fixed_mul         = $10000;
+  div_Fixed         = 1/fixed_mul;
+  piDiv1800         = pi/1800;
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -63,6 +65,15 @@ end;
 //------------------------------------------------------------------------------
 
 function FixedToRect64(const rec: TRect64): TRect64;
+begin
+  result.Left := rec.Left div $10000;
+  result.Top := rec.Top div $10000;
+  result.Right := rec.Right div $10000 +1;
+  result.Bottom := rec.Bottom div $10000 +1;
+end;
+//------------------------------------------------------------------------------
+
+function FixedToRect(const rec: TRect64): TRect;
 begin
   result.Left := rec.Left div $10000;
   result.Top := rec.Top div $10000;
@@ -315,8 +326,6 @@ var
   oldFont: HFont;
   tmp: TPaths;
   offset: TPoint64;
-const
-  fixed_mul = $10000;
 begin
   result := nil;
   len := length(text);
@@ -353,9 +362,6 @@ var
   tmpResult: TPaths;
   tmp: TPaths;
   offset: TPoint64;
-const
-  fixed_mul = $10000;
-  div_Fixed = 1/fixed_mul;
 begin
   len := length(text);
   if (len = 0) or (trueTypeFont = 0) then exit;
@@ -393,28 +399,6 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function GetCharInfo(c: Char;
-  trueTypeFont: HFont; out metrics: TGlyphMetrics): TPaths;
-var
-  memDC: HDC;
-  oldFont: HFont;
-const
-  offset: TPoint64 = (X: 0; Y:0);
-begin
-  result := nil;
-  if (trueTypeFont = 0) then exit;
-  memDC := CreateCompatibleDC(0);
-  if memDC = 0 then exit;
-  oldFont := windows.SelectObject(memDC, trueTypeFont);
-  try
-    result := GetCharInfoInternal(memDC, c, metrics, offset);
-  finally
-    windows.SelectObject(memDC, oldFont);
-    DeleteDC(memDC);
-  end;
-end;
-//------------------------------------------------------------------------------
-
 function GetCharInfos(s: string;
   trueTypeFont: HFont; out metrics: TGlyphMetricsArray): TArrayOfPaths;
 var
@@ -433,7 +417,7 @@ begin
   if memDC = 0 then exit;
   oldFont := windows.SelectObject(memDC, trueTypeFont);
   try
-    for i := 0 to length(s) -1 do
+    for i := 0 to len -1 do
       result[i] := GetCharInfoInternal(memDC, s[i+1], metrics[i], offset);
   finally
     windows.SelectObject(memDC, oldFont);

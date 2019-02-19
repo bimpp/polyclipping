@@ -3,7 +3,7 @@ unit ClipperCore;
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  14 January 2019                                                 *
+* Date      :  19 Febuary 2019                                                 *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Core Clipper Library module                                     *
@@ -95,7 +95,15 @@ type
 
   EClipperLibException = class(Exception);
 
-function PointsEqual(const p1, p2: TPoint64): Boolean;
+//Area: returns type double to avoid potential integer overflows
+function Area(const path: TPath): Double;
+function Orientation(const path: TPath): Boolean;
+function PointInPolygon(const pt: TPoint64;
+  const path: TPath): TPointInPolygonResult;
+function CrossProduct(const pt1, pt2, pt3: TPoint64): double;
+
+function PointsEqual(const p1, p2: TPoint64): Boolean; overload;
+function PointsEqual(const p1, p2: TPointD): Boolean; overload;
   {$IFDEF INLINING} inline; {$ENDIF}
 function Point64(const X, Y: Int64): TPoint64; overload;
   {$IFDEF INLINING} inline; {$ENDIF}
@@ -109,32 +117,45 @@ function GetBounds(const paths: TArrayOfPaths): TRect64; overload;
 function GetBounds(const paths: TPaths): TRect64; overload;
 function GetBounds(const paths: TPathsD): TRectD; overload;
 
-function InflateRect(const rec: TRect64; dx, dy: Int64): TRect64;
-function UnionRects(const rec, rec2: TRect64): TRect64;
-function RotateRectD(const rec: TRectD; angleRad: double): TRectD;
+procedure InflateRect(var rec: TRect64; dx, dy: Int64); overload;
+procedure InflateRect(var rec: TRectD; dx, dy: double); overload;
+function UnionRect(const rec, rec2: TRect64): TRect64; overload;
+function UnionRect(const rec, rec2: TRectD): TRectD; overload;
+function RotateRect(const rec: TRect64; angleRad: double): TRect64; overload;
+function RotateRect(const rec: TRectD; angleRad: double): TRectD; overload;
+procedure OffsetRect(var rec: TRect64; dx, dy: Int64); overload;
+procedure OffsetRect(var rec: TRectD; dx, dy: double); overload;
 
-//Area: result is type double to avoid potential integer overflow
-function Area(const path: TPath): Double;
-function Orientation(const path: TPath): Boolean;
-function PointInPolygon(const pt: TPoint64;
-  const path: TPath): TPointInPolygonResult;
-function CrossProduct(const pt1, pt2, pt3: TPoint64): double;
-
-function ScalePaths(const paths: TPaths; sx, sy: double): TPaths;
+function ScalePath(const path: TPath; sx, sy: double): TPath; overload;
+function ScalePath(const path: TPathD; sx, sy: double): TPath; overload;
+function ScalePaths(const paths: TPaths; sx, sy: double): TPaths; overload;
+function ScalePaths(const paths: TPathsD; sx, sy: double): TPaths; overload;
 function ScalePathsD(const paths: TPaths; sx, sy: double): TPathsD; overload;
 function ScalePathsD(const paths: TPathsD; sx, sy: double): TPathsD; overload;
-function OffsetPaths(const paths: TPaths; dx, dy: Int64): TPaths;
-function OffsetPathsD(const paths: TPathsD; dx, dy: double): TPathsD;
+
+function OffsetPaths(const paths: TPaths; dx, dy: Int64): TPaths; overload;
+function OffsetPaths(const paths: TPathsD; dx, dy: double): TPathsD; overload;
+
+function Paths(const paths: TPathsD): TPaths;
+function PathsD(const paths: TPaths): TPathsD;
 
 function ReversePath(const path: TPath): TPath;
-function ReversePaths(const paths: TPaths): TPaths;
+function ReversePaths(const paths: TPaths): TPaths; overload;
+function ReversePaths(const paths: TPathsD): TPathsD; overload;
 
-procedure AppendPaths(var paths: TPaths; const extra: TPaths);
+procedure AppendPaths(var paths: TPaths; const extra: TPaths); overload;
+procedure AppendPaths(var paths: TPathsD; const extra: TPathsD); overload;
 
 function ArrayOfPathsToPaths(const ap: TArrayOfPaths): TPaths;
 
+//useful debugging functions ...
+function PathToString(const path: TPath): string; overload;
+function PathsToString(const paths: TPaths): string; overload;
+function PathToString(const path: TPathD): string; overload;
+function PathsToString(const paths: TPathsD): string; overload;
+
 const
-  nullRect: TRect64 = (left:0; top: 0; right:0; Bottom: 0);
+  nullRect64: TRect64 = (left:0; top: 0; right:0; Bottom: 0);
   nullRectD: TRectD = (left:0.0; top: 0.0; right:0.0; Bottom: 0.0);
 
 implementation
@@ -178,9 +199,8 @@ end;
 
 function TRectD.GetIsEmpty: Boolean;
 begin
-  result := (bottom > top) and (right > left);
+  result := (bottom <= top) or (right <= left);
 end;
-
 
 //------------------------------------------------------------------------------
 // Miscellaneous Functions ...
@@ -192,31 +212,95 @@ begin
 end;
 //------------------------------------------------------------------------------
 
+procedure StripDuplicates(var path: TPath); overload;
+var
+  i, len: integer;
+begin
+  len := length(path);
+  i := 1;
+  while i < len do
+    if PointsEqual(path[i], path[i-1]) then
+    begin
+      Delete(path,i, 1);
+      dec(len);
+    end else
+      inc(i);
+end;
+//------------------------------------------------------------------------------
+
+procedure StripDuplicates(var path: TPathD); overload;
+var
+  i, len: integer;
+begin
+  len := length(path);
+  i := 1;
+  while i < len do
+    if PointsEqual(path[i], path[i-1]) then
+    begin
+      Delete(path,i, 1);
+      dec(len);
+    end else
+      inc(i);
+end;
+//------------------------------------------------------------------------------
+
+function ScalePath(const path: TPath; sx, sy: double): TPath;
+var
+  i,len: integer;
+begin
+  if sx = 0 then sx := 1;
+  if sy = 0 then sy := 1;
+  len := length(path);
+  setlength(result, len);
+  for i := 0 to len -1 do
+  begin
+    result[i].X := Round(path[i].X * sx);
+    result[i].Y := Round(path[i].Y * sy);
+  end;
+  StripDuplicates(result);
+end;
+//------------------------------------------------------------------------------
+
+function ScalePath(const path: TPathD; sx, sy: double): TPath;
+var
+  i,len: integer;
+begin
+  if sx = 0 then sx := 1;
+  if sy = 0 then sy := 1;
+  len := length(path);
+  setlength(result, len);
+  for i := 0 to len -1 do
+  begin
+    result[i].X := Round(path[i].X * sx);
+    result[i].Y := Round(path[i].Y * sy);
+  end;
+  StripDuplicates(result);
+end;
+//------------------------------------------------------------------------------
+
 function ScalePaths(const paths: TPaths; sx, sy: double): TPaths;
 var
-  i,j,k,len: integer;
+  i,len: integer;
 begin
-  //strips duplicates
-  setlength(result, length(paths));
-  for i := 0 to high(paths) do
-  begin
-    len := length(paths[i]);
-    setlength(result[i], len);
-    if len = 0 then Continue;
-    result[i][0].X := Round(paths[i][0].X * sx);
-    result[i][0].Y := Round(paths[i][0].Y * sy);
-    k := 1;
-    for j := 1 to len -1 do
-    begin
-      result[i][k].X := Round(paths[i][j].X * sx);
-      result[i][k].Y := Round(paths[i][j].Y * sy);
-      if (result[i][k].X <> result[i][k-1].X) or
-        (result[i][k].Y <> result[i][k-1].Y) then inc(k);
-    end;
-    if (k > 1) and (result[i][k-1].X = result[i][0].X) and
-        (result[i][k-1].Y = result[i][0].Y) then dec(k);
-    SetLength(result[i], k);
-  end;
+  if sx = 0 then sx := 1;
+  if sy = 0 then sy := 1;
+  len := length(paths);
+  setlength(result, len);
+  for i := 0 to len -1 do
+    result[i] := ScalePath(paths[i], sx, sy);
+end;
+//------------------------------------------------------------------------------
+
+function ScalePaths(const paths: TPathsD; sx, sy: double): TPaths;
+var
+  i,len: integer;
+begin
+  if sx = 0 then sx := 1;
+  if sy = 0 then sy := 1;
+  len := length(paths);
+  setlength(result, len);
+  for i := 0 to len -1 do
+    result[i] := ScalePath(paths[i], sx, sy);
 end;
 //------------------------------------------------------------------------------
 
@@ -224,6 +308,8 @@ function ScalePathsD(const paths: TPaths; sx, sy: double): TPathsD;
 var
   i,j: integer;
 begin
+  if sx = 0 then sx := 1;
+  if sy = 0 then sy := 1;
   setlength(result, length(paths));
   for i := 0 to high(paths) do
   begin
@@ -233,6 +319,7 @@ begin
       result[i][j].X := paths[i][j].X * sx;
       result[i][j].Y := paths[i][j].Y * sy;
     end;
+    StripDuplicates(result[i]);
   end;
 end;
 //------------------------------------------------------------------------------
@@ -241,6 +328,8 @@ function ScalePathsD(const paths: TPathsD; sx, sy: double): TPathsD;
 var
   i,j: integer;
 begin
+  if sx = 0 then sx := 1;
+  if sy = 0 then sy := 1;
   setlength(result, length(paths));
   for i := 0 to high(paths) do
   begin
@@ -258,6 +347,12 @@ function OffsetPaths(const paths: TPaths; dx, dy: Int64): TPaths;
 var
   i,j: integer;
 begin
+  if (dx = 0) and (dy = 0) then
+  begin
+    result := paths; //nb: reference counted
+    Exit;
+  end;
+
   setlength(result, length(paths));
   for i := 0 to high(paths) do
   begin
@@ -271,7 +366,7 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function OffsetPathsD(const paths: TPathsD; dx, dy: double): TPathsD;
+function OffsetPaths(const paths: TPathsD; dx, dy: double): TPathsD;
 var
   i,j: integer;
 begin
@@ -283,6 +378,44 @@ begin
     begin
       result[i][j].X := paths[i][j].X + dx;
       result[i][j].Y := paths[i][j].Y + dy;
+    end;
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function Paths(const paths: TPathsD): TPaths;
+var
+  i,j,len,len2: integer;
+begin
+  len := Length(paths);
+  setLength(Result, len);
+  for i := 0 to len -1 do
+  begin
+    len2 := Length(paths[i]);
+    setLength(Result[i], len2);
+    for j := 0 to len2 -1 do
+    begin
+      Result[i][j].X := Round(paths[i][j].X);
+      Result[i][j].Y := Round(paths[i][j].Y);
+    end;
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function PathsD(const paths: TPaths): TPathsD;
+var
+  i,j,len,len2: integer;
+begin
+  len := Length(paths);
+  setLength(Result, len);
+  for i := 0 to len -1 do
+  begin
+    len2 := Length(paths[i]);
+    setLength(Result[i], len2);
+    for j := 0 to len2 -1 do
+    begin
+      Result[i][j].X := paths[i][j].X;
+      Result[i][j].Y := paths[i][j].Y;
     end;
   end;
 end;
@@ -315,7 +448,35 @@ begin
 end;
 //------------------------------------------------------------------------------
 
+function ReversePaths(const paths: TPathsD): TPathsD;
+var
+  i, j, highJ: Integer;
+begin
+  i := length(paths);
+  SetLength(Result, i);
+  for i := 0 to i -1 do
+  begin
+    highJ := high(paths[i]);
+    SetLength(Result[i], highJ+1);
+    for j := 0 to highJ do
+      Result[i][j] := paths[i][highJ - j];
+  end;
+end;
+//------------------------------------------------------------------------------
+
 procedure AppendPaths(var paths: TPaths; const extra: TPaths);
+var
+  i, len1, len2: Integer;
+begin
+  len1 := length(paths);
+  len2 := length(extra);
+  SetLength(paths, len1 + len2);
+  for i := 0 to len2 -1 do
+    paths[len1 + i] := extra[i];
+end;
+//------------------------------------------------------------------------------
+
+procedure AppendPaths(var paths: TPathsD; const extra: TPathsD);
 var
   i, len1, len2: Integer;
 begin
@@ -347,6 +508,13 @@ end;
 //------------------------------------------------------------------------------
 
 function PointsEqual(const p1, p2: TPoint64): Boolean;
+  {$IFDEF INLINING} inline; {$ENDIF}
+begin
+  Result := (p1.X = p2.X) and (p1.Y = p2.Y);
+end;
+//------------------------------------------------------------------------------
+
+function PointsEqual(const p1, p2: TPointD): Boolean;
   {$IFDEF INLINING} inline; {$ENDIF}
 begin
   Result := (p1.X = p2.X) and (p1.Y = p2.Y);
@@ -406,7 +574,7 @@ begin
         if paths[i][j][k].Y < Result.Top then Result.Top := paths[i][j][k].Y;
         if paths[i][j][k].Y > Result.Bottom then Result.Bottom := paths[i][j][k].Y;
       end;
-  if Result.Left > Result.Right then Result := nullRect;
+  if Result.Left > Result.Right then Result := nullRect64;
 end;
 //------------------------------------------------------------------------------
 
@@ -423,7 +591,7 @@ begin
       if paths[i][j].Y < Result.Top then Result.Top := paths[i][j].Y;
       if paths[i][j].Y > Result.Bottom then Result.Bottom := paths[i][j].Y;
     end;
-  if Result.Left > Result.Right then Result := nullRect;
+  if Result.Left > Result.Right then Result := nullRect64;
 end;
 //------------------------------------------------------------------------------
 
@@ -442,19 +610,27 @@ begin
     end;
   result.Left := Floor(Result.Left);
   result.Top := Floor(Result.Top);
-  result.Right := Ceil(Result.Left);
-  result.Bottom := Ceil(Result.Top);
-  if Result.Left > Result.Right then Result := nullRectD;
+  result.Right := Ceil(Result.Right);
+  result.Bottom := Ceil(Result.Bottom);
+  if Result.Left >= Result.Right then Result := nullRectD;
 end;
 //------------------------------------------------------------------------------
 
-function InflateRect(const rec: TRect64; dx, dy: Int64): TRect64;
+procedure InflateRect(var rec: TRect64; dx, dy: Int64);
 begin
-  result := rec;
-  dec(result.Left, dx);
-  inc(result.Right, dx);
-  dec(result.Top, dy);
-  inc(result.Bottom, dy);
+  dec(rec.Left, dx);
+  inc(rec.Right, dx);
+  dec(rec.Top, dy);
+  inc(rec.Bottom, dy);
+end;
+//------------------------------------------------------------------------------
+
+procedure InflateRect(var rec: TRectD; dx, dy: double);
+begin
+  rec.Left := rec.Left - dx;
+  rec.Right := rec.Right + dx;
+  rec.Top := rec.Top - dy;
+  rec.Bottom := rec.Bottom + dy;
 end;
 //------------------------------------------------------------------------------
 
@@ -469,11 +645,11 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function RotateRectD(const rec: TRectD; angleRad: double): TRectD;
+function RotateRect(const rec: TRectD; angleRad: double): TRectD;
 var
   i: integer;
   sinA, cosA: double;
-  cp, tl,tr,bl,br: TPointD;
+  cp: TPointD;
   pts: TPathD;
 begin
   setLength(pts, 4);
@@ -500,7 +676,50 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function UnionRects(const rec, rec2: TRect64): TRect64;
+function RotateRect(const rec: TRect64; angleRad: double): TRect64;
+var
+  recD: TRectD;
+begin
+  recD := RectD(rec.Left, rec.Top, rec.Right, rec.Bottom);
+  recD := RotateRect(recD, angleRad);
+  result.Left := Floor(recD.Left);
+  result.Top := Floor(recD.Top);
+  result.Right := Ceil(recD.Right);
+  result.Bottom := Ceil(recD.Bottom);
+end;
+//------------------------------------------------------------------------------
+
+procedure OffsetRect(var rec: TRect64; dx, dy: Int64);
+begin
+  inc(rec.Left, dx); inc(rec.Top, dy);
+  inc(rec.Right, dx); inc(rec.Bottom, dy);
+end;
+//------------------------------------------------------------------------------
+
+procedure OffsetRect(var rec: TRectD; dx, dy: double);
+begin
+  rec.Left   := rec.Left   + dx;
+  rec.Right  := rec.Right  + dx;
+  rec.Top    := rec.Top    + dy;
+  rec.Bottom := rec.Bottom + dy;
+end;
+//------------------------------------------------------------------------------
+
+function UnionRect(const rec, rec2: TRect64): TRect64;
+begin
+  if rec.IsEmpty then result := rec2
+  else if rec2.IsEmpty then result := rec
+  else
+  begin
+    result.Left := min(rec.Left, rec2.Left);
+    result.Right := max(rec.Right, rec2.Right);
+    result.Top := min(rec.Top, rec2.Top);
+    result.Bottom := max(rec.Bottom, rec2.Bottom);
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function UnionRect(const rec, rec2: TRectD): TRectD;
 begin
   if rec.IsEmpty then result := rec2
   else if rec2.IsEmpty then result := rec
@@ -612,6 +831,71 @@ begin
   y2 := pt3.Y - pt2.Y;
   result := (x1 * y2 - y1 * x2);
 end;
+//------------------------------------------------------------------------------
+
+function PointTosString(const pt: TPoint64): string;
+  {$IFDEF INLINING} inline; {$ENDIF}
+begin
+  result := format('%d,%d', [pt.X, pt.Y]);
+end;
+//------------------------------------------------------------------------------
+
+function PathToString(const path: TPath): string;
+var
+  i, highI: integer;
+begin
+  result := '';
+  highI := high(path);
+  if highI < 0 then Exit;
+  for i := 0 to highI -1 do
+    result := result + PointTosString(path[i]) + ', ';
+  result := result + PointTosString(path[highI]);
+end;
+//------------------------------------------------------------------------------
+
+function PathsToString(const paths: TPaths): string;
+var
+  i, highI: integer;
+begin
+  result := '';
+  highI := high(paths);
+  if highI < 0 then Exit;
+  for i := 0 to highI do
+    result := result + PathToString(paths[i]) + #10;
+end;
+//------------------------------------------------------------------------------
+
+function PointDTosString(const pt: TPointD): string;
+  {$IFDEF INLINING} inline; {$ENDIF}
+begin
+  result := format('%1.0f,%1.0f', [pt.X, pt.Y]);
+end;
+//------------------------------------------------------------------------------
+
+function PathToString(const path: TPathD): string;
+var
+  i, highI: integer;
+begin
+  result := '';
+  highI := high(path);
+  if highI < 0 then Exit;
+  for i := 0 to highI -1 do
+    result := result + PointDTosString(path[i]) + ', ';
+  result := result + PointDTosString(path[highI]);
+end;
+//------------------------------------------------------------------------------
+
+function PathsToString(const paths: TPathsD): string;
+var
+  i, highI: integer;
+begin
+  result := '';
+  highI := high(paths);
+  if highI < 0 then Exit;
+  for i := 0 to highI do
+    result := result + PathToString(paths[i]) + #10#10;
+end;
+
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 

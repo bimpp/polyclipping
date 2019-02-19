@@ -3,7 +3,7 @@ unit Clipper;
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  14 January 2019                                                 *
+* Date      :  19 Febuary 2019                                                 *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  This is the main polygon clipping module                        *
@@ -33,7 +33,7 @@ unit Clipper;
 interface
 
 uses
-  Classes, SysUtils, Math,ClipperCore;
+  Classes, SysUtils, Math, ClipperCore;
 
 type
   TVertexFlag = (vfOpenStart, vfOpenEnd, vfLocMax, vfLocMin);
@@ -108,8 +108,10 @@ type
   TOutRecState = (osUndefined, osOpen, osOuter,
     osOuterCheck, osInner, osInnerCheck);
 
-  TPolyTree = class;
-  TPolyPath = class;
+  TPolyTree  = class;
+  TPolyPath  = class;
+  TPolyTreeD = class;
+  TPolyPathD = class;
 
   //OutRec: contains a path in the clipping solution. Edges in the AEL will
   //have OutRec pointers assigned when they form part of the clipping solution.
@@ -125,7 +127,6 @@ type
 
   TClipper = class
   private
-    FScalingFrac        : double;
     FBotY               : Int64;
     FScanLine           : PScanLine;
     FLocMinListSorted   : Boolean;
@@ -173,7 +174,6 @@ type
     procedure DoHorizontal(horzEdge: PActive);
     procedure DoTopOfScanbeam(Y: Int64);
     function DoMaxima(e: PActive): PActive;
-    procedure SetScalingFrac(value: double);
     function AddOutPt(e: PActive; const pt: TPoint64): TOutPt;
     procedure AddLocalMinPoly(e1, e2: PActive; const pt: TPoint64;
       IsNew: Boolean = false; orientationCheckRequired: Boolean = false);
@@ -184,7 +184,6 @@ type
     function ExecuteInternal(clipType: TClipType;
       fillRule: TFillRule): Boolean; virtual;
     function BuildResult(out closedPaths, openPaths: TPaths): Boolean;
-    function BuildResultD(out closedPaths, openPaths: TPathsD): Boolean;
     function BuildResultTree(polyTree: TPolyTree; out openPaths: TPaths): Boolean;
     property OutRecList: TList read FOutRecList;
   public
@@ -196,73 +195,96 @@ type
     //ADDPATH & ADDPATHS METHODS ...
     //Integer paths (TPath) ...
     procedure AddPath(const path64: TPath; polyType: TPathType = ptSubject;
-      isOpen: Boolean = false); overload;
+      isOpen: Boolean = false);
     procedure AddPaths(const paths64: TPaths; polyType: TPathType = ptSubject;
-      isOpen: Boolean = false); overload;
-    //Floating point paths (TPathD) ...
-    procedure AddPath(const pathD: TPathD; polyType: TPathType = ptSubject;
-      isOpen: Boolean = false); overload;
-    procedure AddPaths(const pathsD: TPathsD; polyType: TPathType = ptSubject;
-      isOpen: Boolean = false); overload;
-
+      isOpen: Boolean = false);
     //EXECUTE METHODS ...
-    //Integer paths (TPath) ...
-    function Execute(clipType: TClipType; out closedPaths: TPaths;
-      fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
-    function Execute(clipType: TClipType; out closedPaths, openPaths: TPaths;
-      fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
-    //Floating point paths (TPathD) ...
-    function Execute(clipType: TClipType; out closedPaths: TPathsD;
-      fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
-    function Execute(clipType: TClipType; out closedPaths, openPaths: TPathsD;
-      fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
-    //Alternative PolyTree structure to contain the solution's closed paths ...
-    function Execute(clipType: TClipType;
-      var polytree: TPolyTree; out openPaths: TPaths;
-      fillRule: TFillRule = frEvenOdd): Boolean; overload; virtual;
-    //Scaling: is primarily used with floating point paths but it can also be
-    //used with integer paths. To improve precision, set Scaling to a value > 1
-    //before adding any paths to the clipper object. Scaling can also be used
-    //to rescale a result by adjusting scaling afer paths have been added but
-    //before the Execute method is called. Default == 1.0 (no scaling).
-    property Scaling: double read FScalingFrac write SetScalingFrac;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      out closedPaths: TPaths): Boolean; overload; virtual;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      out closedPaths, openPaths: TPaths): Boolean; overload; virtual;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      var polytree: TPolyTree; out openPaths: TPaths): Boolean; overload; virtual;
   end;
+
+  TPolyPathClass = class of TPolyPath;
 
   TPolyPath = class
   private
     FParent      : TPolyPath;
+    FClass       : TPolyPathClass;
     FPath        : TPath;
     FChildList   : TList;
-    FScaling     : double; //nb: set by the Clipper object
     function     GetChildCnt: Integer;
     function     GetChild(index: Integer): TPolyPath;
     function     GetIsHole: Boolean;
-    function     GetPathD: TPathD;
   protected
-    procedure    SetScaling(scaling : double);
     function     AddChild(const path: TPath): TPolyPath;
   public
     constructor  Create;  virtual;
     destructor   Destroy; override;
-    procedure    Clear;
+    procedure    Clear; virtual;
     property     Parent: TPolyPath read FParent;
     property     IsHole: Boolean read GetIsHole;
     property     ChildCount: Integer read GetChildCnt;
     property     Child[index: Integer]: TPolyPath read GetChild;
-
     property     Path: TPath read FPath;
-    property     PathD: TPathD read GetPathD;
-    property     Scaling: double read FScaling; //READ ONLY!
   end;
 
   //TPolyTree: Intended as a READ-ONLY data structure for closed paths that are
   //returned by a clipping operation. While this structure is more complex than
   //the alternative TPaths structure, it does preserve path ownership (ie those
   //paths that contain (own) other paths) which is useful to some users.
-  TPolyTree = class(TPolyPath);
+  TPolyTree = class(TPolyPath)
+  public
+    constructor  Create; override;
+  end;
 
-  function PolyTreeToPaths(PolyTree: TPolyTree): TPaths;
-  function PolyTreeToPathsD(PolyTree: TPolyTree): TPathsD;
+
+  //FLOATING POINT POLYGON COORDINATES (D suffixes indicate double precision)
+
+  //TClipperD - is a TClipper wrapper to manage floating point conversions.
+  //Since all clipping is done using integer polygon coordinates to maintain
+  //robustness, floating point coords must be converted to and from integer
+  //values. Also scaling is frequently required to achieve the needed precision.
+
+  TClipperD = class(TClipper)
+  private
+    FScale: double;
+  public
+    procedure AddPath(const pathD: TPathD; polyType: TPathType = ptSubject;
+      isOpen: Boolean = false); overload;
+    procedure AddPaths(const pathsD: TPathsD; polyType: TPathType = ptSubject;
+      isOpen: Boolean = false); overload;
+
+    constructor Create(scale: double); reintroduce; overload;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      out closedPaths: TPathsD): Boolean; overload;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      out closedPaths, openPaths: TPathsD): Boolean; overload;
+    function Execute(clipType: TClipType; fillRule: TFillRule;
+      var polytree: TPolyTreeD; out openPaths: TPathsD): Boolean; overload;
+  end;
+
+  //TPolyPathD and TPolyTreeD are wrappers for TPolyPath and TPolyTree ...
+  TPolyPathD = class(TPolyPath)
+  private
+    FScaling : double;
+    function  GetPathD: TPathD;
+  protected
+    procedure SetScaling(scaling : double);
+  public
+    property  PathD: TPathD read GetPathD;
+  end;
+
+  TPolyTreeD = class(TPolyPathD)
+  public
+    constructor Create; override;
+  end;
+
+
+  function PolyTreeToPaths(PolyTree: TPolyTree): TPaths; overload;
+  function PolyTreeToPaths(PolyTree: TPolyTreeD): TPathsD; overload;
 
 implementation
 
@@ -626,66 +648,18 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function BuildPath(op: TOutPt; scaling: double): TPath;
+function BuildPath(op: TOutPt): TPath;
 var
-  i, j, opCnt: integer;
+  i, opCnt: integer;
 begin
   result := nil;
   opCnt := PointCount(op);
   if (opCnt < 2) then Exit;
   setLength(result, opCnt);
-  if scaling = 1.0 then
+  for i := 0 to opCnt -1 do
   begin
-    for i := 0 to opCnt -1 do
-    begin
-      result[i] := op.Pt;
-      op := op.Next;
-    end;
-  end else
-  begin
-    result[0] := Point64(op.Pt.X / scaling, op.Pt.Y / scaling);
-    j := 1;
-    for i := 2 to opCnt do
-    begin
-      op := op.Next;
-      result[j] := Point64(op.Pt.X / scaling, op.Pt.Y / scaling);
-      if not PointsEqual(result[j-1], result[j]) then inc(j);
-    end;
-    if j < opCnt then setLength(result, j);
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function BuildPathD(op: TOutPt; scaling: double): TPathD;
-var
-  i, j, opCnt: integer;
-begin
-  result := nil;
-  opCnt := PointCount(op);
-  if (opCnt < 2) then Exit;
-  setLength(result, opCnt);
-  if scaling = 1.0 then
-  begin
-    for i := 0 to opCnt -1 do
-    begin
-      result[i].X := op.Pt.X;
-      result[i].Y := op.Pt.Y;
-      op := op.Next;
-    end;
-  end else
-  begin
-    result[0].X := op.Pt.X / scaling;
-    result[0].Y := op.Pt.Y / scaling;
-    j := 1;
-    for i := 2 to opCnt do
-    begin
-      op := op.Next;
-      result[j].X := op.Pt.X / scaling;
-      result[j].Y := op.Pt.Y / scaling;
-      if (result[j].X <> result[j-1].X) and
-        (result[j].Y <> result[j-1].Y) then inc(j);
-    end;
-    if j < opCnt then setLength(result, j);
+    result[i] := op.Pt;
+    op := op.Next;
   end;
 end;
 //------------------------------------------------------------------------------
@@ -922,7 +896,6 @@ begin
   FOutRecList := TList.Create;
   FIntersectList := TList.Create;
   FVertexList := TList.Create;
-  FScalingFrac := 1.0;
 end;
 //------------------------------------------------------------------------------
 
@@ -978,14 +951,6 @@ begin
   FCurrentLocMinIdx := 0;
   FActives := nil;
   FSel := nil;
-end;
-//------------------------------------------------------------------------------
-
-procedure TClipper.SetScalingFrac(value: double);
-begin
-  if FLocMinList.Count > 0 then RaiseError(rsClipper_ScalingErr);
-  if value <= 0 then RaiseError(rsClipper_ScalingErr2);
-  FScalingFrac := value;
 end;
 //------------------------------------------------------------------------------
 
@@ -1100,7 +1065,6 @@ procedure TClipper.AddPathToVertexList(const p: TPath;
   polyType: TPathType; isOpen: Boolean);
 var
   i, j, pathLen: Integer;
-  x,y: Int64;
   isFlat, goingUp, p0IsMinima, p0IsMaxima: Boolean;
   v: PVertex;
   va: PVertexArray;
@@ -1153,10 +1117,7 @@ begin
   GetMem(va, sizeof(TVertex) * pathLen);
   FVertexList.Add(va);
 
-  if FScalingFrac <> 1.0 then
-    va[0].Pt := Point64(p[0].X * FScalingFrac, p[0].Y * FScalingFrac) else
-    va[0].Pt := p[0];
-
+  va[0].Pt := p[0];
   va[0].flags := [];
   if isOpen then
   begin
@@ -1170,17 +1131,8 @@ begin
   i := 0;
   for j := 1 to pathLen -1 do
   begin
-    if FScalingFrac <> 1.0 then
-    begin
-      x := Round(p[j].X * FScalingFrac);
-      y := Round(p[j].Y * FScalingFrac);
-      if (x = va[i].Pt.X) and (y = va[i].Pt.Y) then Continue; //duplicate
-      va[j].Pt := Point64(x, y);
-    end else
-    begin
-      if PointsEqual(p[j], va[i].Pt) then Continue;           //duplicate
-      va[j].Pt := p[j];
-    end;
+    if PointsEqual(p[j], va[i].Pt) then Continue;           //duplicate
+    va[j].Pt := p[j];
 
     va[j].flags := [];
     va[i].next := @va[j];
@@ -1239,38 +1191,12 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-procedure TClipper.AddPath(const pathD: TPathD; PolyType: TPathType;
-  isOpen: Boolean);
-var
-  i, len: integer;
-  p: TPath;
-begin
-  len := length(pathD);
-  setLength(p, len);
-  for i := 0 to len -1 do
-  begin
-    p[i].X := Round(pathD[i].X * fScalingFrac);
-    p[i].Y := Round(pathD[i].Y * fScalingFrac);
-  end;
-  AddPathToVertexList(p, polyType, isOpen);
-end;
-//------------------------------------------------------------------------------
-
 procedure TClipper.AddPaths(const paths64: TPaths; polyType: TPathType;
   isOpen: Boolean);
 var
   i: Integer;
 begin
   for i := 0 to high(paths64) do AddPath(paths64[i], polyType, isOpen);
-end;
-//------------------------------------------------------------------------------
-
-procedure TClipper.AddPaths(const pathsD: TPathsD; polyType: TPathType;
-  isOpen: Boolean);
-var
-  i: Integer;
-begin
-  for i := 0 to high(pathsD) do AddPath(pathsD[i], polyType, isOpen);
 end;
 //------------------------------------------------------------------------------
 
@@ -2059,8 +1985,8 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function TClipper.Execute(clipType: TClipType; out closedPaths: TPaths;
-  fillRule: TFillRule): Boolean;
+function TClipper.Execute(clipType: TClipType;
+  fillRule: TFillRule; out closedPaths: TPaths): Boolean;
 var
   dummy: TPaths;
 begin
@@ -2074,8 +2000,8 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function TClipper.Execute(clipType: TClipType; out closedPaths, openPaths: TPaths;
-  fillRule: TFillRule = frEvenOdd): Boolean;
+function TClipper.Execute(clipType: TClipType; fillRule: TFillRule;
+  out closedPaths, openPaths: TPaths): Boolean;
 begin
   closedPaths := nil;
   openPaths := nil;
@@ -2088,38 +2014,8 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function TClipper.Execute(clipType: TClipType;
-  out closedPaths: TPathsD; fillRule: TFillRule): Boolean;
-var
-  dummy: TPathsD;
-begin
-  closedPaths := nil;
-  try
-    Result := ExecuteInternal(clipType, fillRule) and
-      BuildResultD(closedPaths, dummy);
-  finally
-    CleanUp;
-  end;
-
-end;
-//------------------------------------------------------------------------------
-
-function TClipper.Execute(clipType: TClipType;
-  out closedPaths, openPaths: TPathsD; fillRule: TFillRule): Boolean;
-begin
-  closedPaths := nil;
-  openPaths := nil;
-  try
-    Result := ExecuteInternal(clipType, fillRule) and
-      BuildResultD(closedPaths, openPaths);
-  finally
-    CleanUp;
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function TClipper.Execute(clipType: TClipType; var polytree: TPolyTree;
-  out openPaths: TPaths; fillRule: TFillRule): Boolean;
+function TClipper.Execute(clipType: TClipType; fillRule: TFillRule;
+  var polytree: TPolyTree; out openPaths: TPaths): Boolean;
 begin
   if not assigned(polytree) then RaiseError(rsClipper_PolyTreeErr);
   polytree.Clear;
@@ -2627,15 +2523,16 @@ begin
 
       if IsOpen(outRec) then
       begin
-        openPaths[cntOpen] := BuildPath(outRec.Pts, FScalingFrac);
+        openPaths[cntOpen] := BuildPath(outRec.Pts);
         if length(openPaths[cntOpen]) > 1 then inc(cntOpen);
       end else
       begin
-        closedPaths[cntClosed] := BuildPath(outRec.Pts, FScalingFrac);
+        closedPaths[cntClosed] := BuildPath(outRec.Pts);
         j := length(closedPaths[cntClosed]);
         if (j > 2) and
-          PointsEqual(closedPaths[cntClosed][0],closedPaths[cntClosed][j -1]) then
-            setlength(closedPaths[cntClosed], j - 1);
+          PointsEqual(closedPaths[cntClosed][0],
+            closedPaths[cntClosed][j -1]) then
+              setlength(closedPaths[cntClosed], j - 1);
         if j > 2 then inc(cntClosed);
       end;
     end;
@@ -2648,48 +2545,8 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function TClipper.BuildResultD(out closedPaths, openPaths: TPathsD): Boolean;
-var
-  i, j, cntClosed, cntOpen: Integer;
-  outRec: TOutRec;
-begin
-  try
-    cntClosed := 0; cntOpen := 0;
-    SetLength(closedPaths, FOutRecList.Count);
-    SetLength(openPaths, FOutRecList.Count);
-    for i := 0 to FOutRecList.Count -1 do
-    begin
-      outRec := FOutRecList[i];
-      if not assigned(outRec.Pts) then Continue;
-
-      if IsOpen(outRec) then
-      begin
-        openPaths[cntOpen] := BuildPathD(outRec.Pts, FScalingFrac);
-        if length(openPaths[cntOpen]) > 1 then inc(cntOpen);
-      end else
-      begin
-        closedPaths[cntClosed] := BuildPathD(outRec.Pts, FScalingFrac);
-        j := high(closedPaths[cntClosed]);
-        if (j > 1) and
-          (closedPaths[cntClosed][0].X = closedPaths[cntClosed][j].X) and
-          (closedPaths[cntClosed][0].Y = closedPaths[cntClosed][j].Y) then
-            setlength(closedPaths[cntClosed], j);
-        if j > 1 then inc(cntClosed);
-      end;
-    end;
-    SetLength(closedPaths, cntClosed);
-    SetLength(openPaths, cntOpen);
-    result := true;
-  except
-    result := false;
-  end;
-end;
-//------------------------------------------------------------------------------
-
-type
-  TPolyTreeHack = class(TPolyTree);
-
-function TClipper.BuildResultTree(polyTree: TPolyTree; out openPaths: TPaths): Boolean;
+function TClipper.BuildResultTree(polyTree: TPolyTree;
+  out openPaths: TPaths): Boolean;
 var
   i, j, cntOpen: Integer;
   outRec: TOutRec;
@@ -2697,7 +2554,6 @@ var
 begin
   try
     polyTree.Clear;
-    TPolyTreeHack(polyTree).SetScaling(self.FScalingFrac);
     setLength(openPaths, FOutRecList.Count);
     cntOpen := 0;
     for i := 0 to FOutRecList.Count -1 do
@@ -2719,11 +2575,11 @@ begin
 
         if IsOpen(outRec) then
         begin
-          openPaths[cntOpen] := BuildPath(outRec.Pts, FScalingFrac);
+          openPaths[cntOpen] := BuildPath(outRec.Pts);
           if length(openPaths[cntOpen]) > 1 then inc(cntOpen);
         end else
         begin
-          path := BuildPath(outRec.Pts, FScalingFrac);
+          path := BuildPath(outRec.Pts);
           j := length(path);
           if (j > 2) and PointsEqual(path[0], path[j -1]) then
             setlength(path, j - 1);
@@ -2739,9 +2595,9 @@ begin
           end;
 
           if assigned(outRec.Owner) and assigned(outRec.Owner.PolyPath) then
-            outRec.PolyPath :=
-              TPolyTreeHack(outRec.Owner.PolyPath).AddChild(path) else
-              outRec.PolyPath := TPolyTreeHack(polyTree).AddChild(path);
+            outRec.PolyPath := outRec.Owner.PolyPath.AddChild(path)
+          else
+            outRec.PolyPath := polyTree.AddChild(path);
         end;
       end;
     setLength(openPaths, cntOpen);
@@ -2777,7 +2633,75 @@ begin
 end;
 
 //------------------------------------------------------------------------------
-//  TPolyPath class
+//  TClipperD methods
+//------------------------------------------------------------------------------
+
+constructor TClipperD.Create(scale: double);
+begin
+  inherited Create;
+  FScale := scale;
+end;
+//------------------------------------------------------------------------------
+
+procedure TClipperD.AddPath(const pathD: TPathD; polyType: TPathType = ptSubject;
+  isOpen: Boolean = false);
+var
+  p: TPath;
+begin
+  p := ScalePath(pathD, FScale, FScale);
+  Inherited AddPath(p, polyType, isOpen);
+end;
+//------------------------------------------------------------------------------
+
+procedure TClipperD.AddPaths(const pathsD: TPathsD; polyType: TPathType = ptSubject;
+  isOpen: Boolean = false);
+var
+  pp: TPaths;
+begin
+  pp := ScalePaths(pathsD, FScale, FScale);
+  Inherited AddPaths(pp, polyType, isOpen);
+end;
+//------------------------------------------------------------------------------
+
+function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
+  out closedPaths: TPathsD): Boolean;
+var
+  closedP: TPaths;
+begin
+  Result := inherited Execute(clipType, fillRule, closedP);
+  if not Result then Exit;
+  if FScale = 0 then FScale := 1;
+  closedPaths := ScalePathsD(closedP, FScale, FScale);
+end;
+//------------------------------------------------------------------------------
+
+function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
+  out closedPaths, openPaths: TPathsD): Boolean;
+var
+  closedP, openP: TPaths;
+begin
+  Result := inherited Execute(clipType, fillRule, closedP, openP);
+  if not Result then Exit;
+  if FScale = 0 then FScale := 1;
+  closedPaths := ScalePathsD(closedP, 1/FScale, 1/FScale);
+  openPaths := ScalePathsD(openP, 1/FScale, 1/FScale);
+end;
+//------------------------------------------------------------------------------
+
+function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
+  var polytree: TPolyTreeD; out openPaths: TPathsD): Boolean;
+var
+  openP: TPaths;
+begin
+  Result := inherited Execute(clipType, fillRule, TPolyTree(polytree), openP);
+  if not Result then Exit;
+  if FScale = 0 then FScale := 1;
+  polytree.SetScaling(FScale); //recursive
+  openPaths := ScalePathsD(openP, 1/FScale, 1/FScale);
+end;
+
+//------------------------------------------------------------------------------
+//  TPolyPath methods
 //------------------------------------------------------------------------------
 
 constructor TPolyPath.Create;
@@ -2826,26 +2750,44 @@ end;
 
 function TPolyPath.AddChild(const path: TPath): TPolyPath;
 begin
-  Result := TPolyPath.Create;
-  Result.FPath := path;
-  FChildList.Add(Result);
+  Result := fClass.Create;
   Result.FParent := self;
+  Result.FClass := FClass;
+  FChildList.Add(Result);
+  Result.FPath := path;
 end;
+
+//------------------------------------------------------------------------------
+// TPolyTree methods
 //------------------------------------------------------------------------------
 
-procedure TPolyPath.SetScaling(scaling : double);
+constructor TPolyTree.Create;
+begin
+  inherited;
+  FClass := TPolyPath;
+end;
+
+//------------------------------------------------------------------------------
+// TPolyPathD methods
+//------------------------------------------------------------------------------
+
+procedure TPolyPathD.SetScaling(scaling : double);
+var
+  i: integer;
 begin
   FScaling := scaling;
+  for i := 0 to FChildList.Count -1 do
+    TPolyPathD(FChildList[i]).SetScaling(scaling);
 end;
 //------------------------------------------------------------------------------
 
-function TPolyPath.GetPathD: TPathD;
+function TPolyPathD.GetPathD: TPathD;
 var
   i, len: integer;
 begin
   len := length(FPath);
   setLength(Result, len);
-  if FScaling = 1 then
+  if (FScaling = 0) or (FScaling = 1.0) then
   begin
     for i := 0 to len -1 do
     begin
@@ -2861,6 +2803,19 @@ begin
     end;
   end;
 end;
+
+//------------------------------------------------------------------------------
+// TPolyTreeD methods
+//------------------------------------------------------------------------------
+
+constructor TPolyTreeD.Create;
+begin
+  inherited;
+  FClass := TPolyPathD;
+end;
+
+//------------------------------------------------------------------------------
+// Additional unit functions
 //------------------------------------------------------------------------------
 
 procedure AddPolyNodeToPaths(Poly: TPolyPath; var Paths: TPaths);
@@ -2886,7 +2841,7 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-procedure AddPolyNodeToPathsD(Poly: TPolyPath; var Paths: TPathsD);
+procedure AddPolyNodeToPathsD(Poly: TPolyPathD; var Paths: TPathsD);
 var
   i: Integer;
 begin
@@ -2898,11 +2853,11 @@ begin
   end;
 
   for i := 0 to Poly.ChildCount - 1 do
-    AddPolyNodeToPathsD(Poly.Child[i], Paths);
+    AddPolyNodeToPathsD(TPolyPathD(Poly.Child[i]), Paths);
 end;
 //------------------------------------------------------------------------------
 
-function PolyTreeToPathsD(PolyTree: TPolyTree): TPathsD;
+function PolyTreeToPaths(PolyTree: TPolyTreeD): TPathsD;
 begin
   Result := nil;
   AddPolyNodeToPathsD(PolyTree, Result);
