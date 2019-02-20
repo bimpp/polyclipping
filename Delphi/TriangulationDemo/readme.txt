@@ -7,6 +7,6 @@ Polygon Demo (Simple):
 This demo renders polygons onto the application surface using OpenGL. 
 
 Text Demo (Complex):
-This demo is mostly a side project on rasterizing text, and uses OpenGL and Clipper (and my new Image32 graphics library) to achieve this. The rasterized text is consistently of high quality when viewed on high resolution monitors using font scaling (DPI > 96). However, on standard resolution monitors (dpi = 96), text rendering quality is of variable quality, though still mostly pretty good. With smaller font heights, sub-pixel rendering is recommended to avoid noticeable blurring though sometimes sub-pixel rendering can cause annoying text colorization. (This text demo requires OpenGL drivers vers 3.0 or higher.)
+This demo is mostly a side project to rasterize truetype (vector) fonts, and uses OpenGL and Clipper (and my new Image32 graphics library) to achieve this. It's now at the point that it renders consistently high quality text, whether it's viewed on high resolution or standard resolution monitors. Previous problems with blurring of smaller fonts and text colorization with sub-pixel rendering have been addressed. (This text demo requires OpenGL drivers vers 3.0 or higher.)
 
 Finally, please note that I'm not claiming any proficiency with OpenGL. If there are things that I'm doing wrong, or could do much better, I would value the feedback.
