@@ -3,7 +3,7 @@ unit ClipperText;
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  14 January 2019                                                 *
+* Date      :  23 February 2019                                                *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Module that converts Windows fonts into paths                   *
@@ -13,20 +13,18 @@ unit ClipperText;
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, ClipperCore;
+  Windows, Messages, SysUtils, Classes, ClipperCore, Image32;
 
 type
   TGlyphMetricsArray = array of TGlyphMetrics;
 
-{$IFNDEF UNICODE}PByte = PChar;{$ENDIF}
+//CreateCharImage: gets a Windows generated 'hinted' glyph image
+function CreateCharImage(memDC: HDC; c: Char;
+  out metrics: TGlyphMetrics): TImage32;
+//GetCharPaths: gets the glyph's raw vectors
+function GetCharPaths(memDC: HDC; c: Char;
+  hinted: Boolean; out metrics: TGlyphMetrics): TPaths;
 
-function GetCharInfos(s: string;
-  trueTypeFont: HFont; out metrics: TGlyphMetricsArray): TArrayOfPaths;
-
-function TextToPaths(const text: string;
-  x, y: Int64; trueTypeFont: HFont; out gma: TGlyphMetricsArray): TPaths;
-function TextToPathsD(const text: string;
-  x, y: Int64; trueTypeFont: HFont; out gma: TGlyphMetricsArray): TPathsD;
 function FixedToRect64(const rec: TRect64): TRect64;
 function FixedToRect(const rec: TRect64): TRect;
 
@@ -47,20 +45,24 @@ const
   GGO_BEZIER        = $3;
   GGO_UNHINTED      = $100;
   TT_PRIM_CSPLINE   = $3;
-  cbezier_tolerance = $1000;
-  qbezier_tolerance = $1000;
-  buff_size         = 128;
-  fixed_mul         = $10000;
-  div_Fixed         = 1/fixed_mul;
-  piDiv1800         = pi/1800;
+  CBezierTolerance  = $1000;
+  QBezierTolerance  = $1000;
+  BuffSize          = 128;
+  FixedMul          = $10000;
+  DivFixed: double  = 1/FixedMul;
+  piDiv1800: double = pi/1800;
+
+var
+  scale64To255: array[0..64] of byte;
+  GgoHinted: array [boolean] of Cardinal = (GGO_UNHINTED, $0);
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 
-function PointFxToPoint64(const fxpt: TPointFX; offset: TPoint64): TPoint64;
+function PointFxToPoint64(const fxpt: TPointFX): TPoint64;
 begin
-  result.X := (Integer(fxpt.x) + offset.X);
-  result.Y := (Integer(fxpt.y) + offset.Y);
+  result.X := Integer(fxpt.x);
+  result.Y := Integer(fxpt.y);
 end;
 //------------------------------------------------------------------------------
 
@@ -90,7 +92,7 @@ begin
   len2 := length(path);
   if len2 < 2 then exit;
   setLength(appendTo, len + len2 -1);
-  for i := 1 to len2 -1 do appendTo[len+i-1] := path[i];
+  Move(Path[1], appendTo[len], (len2 -1) * SizeOf(TPoint64));
 end;
 //------------------------------------------------------------------------------
 
@@ -117,10 +119,10 @@ var
   begin
     //assess flatness of curve ...
     if (abs(p1.x + p3.x - 2 * p2.x) +
-      abs(p1.y + p3.y - 2 * p2.y) < qbezier_tolerance) then
+      abs(p1.y + p3.y - 2 * p2.y) < QBezierTolerance) then
     begin
       if resultCnt = length(result) then
-        setLength(result, length(result) + buff_size);
+        setLength(result, length(result) + BuffSize);
       result[resultCnt] := p3;
       inc(resultCnt);
     end else
@@ -140,7 +142,7 @@ begin
   arrayLen := length(control_points);
   if (arrayLen < 3) then exit;
   arrayLenMin3 := arrayLen -3;
-  setLength(result, buff_size);
+  setLength(result, BuffSize);
   result[0] := control_points[0];
   resultCnt := 1;
 
@@ -173,10 +175,10 @@ var
   begin
     if (abs(p1.x + p3.x - 2*p2.x) + abs(p2.x + p4.x - 2*p3.x) +
       abs(p1.y + p3.y - 2*p2.y) + abs(p2.y + p4.y - 2*p3.y)) <
-        cbezier_tolerance then
+        CBezierTolerance then
     begin
       if resultCnt = length(result) then
-        setLength(result, length(result) +buff_size);
+        setLength(result, length(result) +BuffSize);
       result[resultCnt] := p4;
       inc(resultCnt);
     end else
@@ -203,7 +205,7 @@ begin
   arrayLen := length(control_points);
   if (arrayLen < 4) or ((arrayLen -1) mod 3 <> 0) then exit;
 
-  setLength(result, buff_size);
+  setLength(result, BuffSize);
   result[0] := control_points[0];
   resultCnt := 1;
   for i := 0 to (arrayLen div 3)-1 do
@@ -216,7 +218,9 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function ParseFontCharInfo(info: PByte; infoSize: cardinal;  offset: TPoint64): TPaths;
+{$IFNDEF UNICODE} type PByte = PChar; {$ENDIF}
+
+function ParseFontCharInfo(info: PByte; infoSize: cardinal): TPaths;
 var
   tmpCurvePts: TPath;
   i, resultCntMin1, pathCnt, pathCurrCnt: integer;
@@ -234,7 +238,7 @@ begin
       inc(resultCntMin1);
       setLength(Result, resultCntMin1 +1);
       setlength(Result[resultCntMin1],1);
-      Result[resultCntMin1][0] := PointFxToPoint64(pfxStart, offset);
+      Result[resultCntMin1][0] := PointFxToPoint64(pfxStart);
       pathCurrCnt := 1;
     end;
     while info < endContour do
@@ -250,7 +254,7 @@ begin
               for i := 0 to pathCnt -1 do
               begin
                 Result[resultCntMin1][pathCurrCnt+i] :=
-                  PointFxToPoint64(PPointfx(info)^, offset);
+                  PointFxToPoint64(PPointfx(info)^);
                 inc(info, sizeOf(TPointfx));
               end;
             end;
@@ -260,7 +264,7 @@ begin
               tmpCurvePts[0] := Result[resultCntMin1][pathCurrCnt-1];
               for i := 1 to pathCnt do
               begin
-                tmpCurvePts[i] := PointFxToPoint64(PPointfx(info)^, offset);
+                tmpCurvePts[i] := PointFxToPoint64(PPointfx(info)^);
                 inc(info, sizeOf(TPointfx));
               end;
               tmpCurvePts := GetQSplinePoints(tmpCurvePts);
@@ -276,7 +280,7 @@ begin
               tmpCurvePts[0] := Result[resultCntMin1][pathCurrCnt-1];
               for i := 1 to pathCnt do
               begin
-                tmpCurvePts[i] := PointFxToPoint64(PPointfx(info)^, offset);
+                tmpCurvePts[i] := PointFxToPoint64(PPointfx(info)^);
                 inc(info, sizeOf(TPointfx));
               end;
               tmpCurvePts := GetCBezierPoints(tmpCurvePts);
@@ -293,138 +297,94 @@ begin
 end;
 //------------------------------------------------------------------------------
 
-function GetCharInfoInternal(memDC: HDC; c: Char;
-  out metrics: TGlyphMetrics; offset: TPoint64): TPaths;
+function GetCharPaths(memDC: HDC; c: Char;
+  hinted: Boolean; out metrics: TGlyphMetrics): TPaths;
 var
   size: DWord;
   info, startInfo:  PByte;
+//  rec: TRect;
 begin
-  result := nil;
-  startInfo := nil;
   size := GetGlyphOutline(memDC, cardinal(c),
-    GGO_NATIVE or GGO_UNHINTED, metrics, 0, nil, vert_flip_mat2);
-  if (size = GDI_ERROR) or (size = 0) then exit;
+    GGO_NATIVE or GgoHinted[hinted], metrics, 0, nil, vert_flip_mat2);
+  if (size = GDI_ERROR) or (size = 0) then
+  begin
+    if (size = GDI_ERROR) then
+      FillChar(metrics, SizeOf(metrics), 0);
+    result := nil;
+    exit;
+  end;
+
+  startInfo := nil;
   GetMem(info, size);
   try
     startInfo := info;
-    if GetGlyphOutline(memDC, cardinal(c), GGO_NATIVE or GGO_UNHINTED,
+    if GetGlyphOutline(memDC, cardinal(c), GGO_NATIVE or GgoHinted[hinted],
       metrics, size, info, vert_flip_mat2) <> GDI_ERROR then
-        Result := ParseFontCharInfo(info, size, offset);
+        Result := ParseFontCharInfo(info, size);
+//    //and possibly some very minor adjustments to metrics ...
+//    rec := FixedToRect(GetBounds(Result));
+//    metrics.gmptGlyphOrigin.X := rec.left;
+//    metrics.gmptGlyphOrigin.Y := rec.Bottom;
+//    metrics.gmBlackBoxX := rec.Width;
+//    metrics.gmBlackBoxY := rec.Height;
   finally
     FreeMem(startInfo);
   end;
 end;
 //------------------------------------------------------------------------------
 
-function TextToPaths(const text: string;
-  x, y: Int64; trueTypeFont: HFont;
-  out gma: TGlyphMetricsArray): TPaths;
+function CreateCharImage(memDC: HDC; c: Char;
+  out metrics: TGlyphMetrics): TImage32;
 var
-  i, len: integer;
-  gm: TGlyphMetrics;
-  memDC: HDC;
-  oldFont: HFont;
-  tmp: TPaths;
-  offset: TPoint64;
+  i, h,w: integer;
+  size: DWord;
+  bytes: TBytes;
+  pb: PByte;
+  pc: PARGB;
 begin
-  result := nil;
-  len := length(text);
-  if (len = 0) or (trueTypeFont = 0) then exit;
-  SetLength(gma, len);
-  offset := Point64(x, y);
-  memDC := CreateCompatibleDC(0);
-  if memDC = 0 then exit;
-  oldFont := windows.SelectObject(memDC, trueTypeFont);
-  try
-    for i := 1 to len do
-    begin
-      tmp := GetCharInfoInternal(memDC, text[i], gm, offset);
-      gma[i-1] := gm;
-      AppendPaths(result, tmp);
-      inc(offset.X, gm.gmCellIncX * fixed_mul);
-      dec(offset.Y, gm.gmCellIncY * fixed_mul);
-    end;
-  finally
-    windows.SelectObject(memDC, oldFont);
-    DeleteDC(memDC);
-  end;
-end;
-//------------------------------------------------------------------------------
-
-function TextToPathsD(const text: string;
-  x, y: Int64; trueTypeFont: HFont;
-  out gma: TGlyphMetricsArray): TPathsD;
-var
-  i, j, len, len2: integer;
-  gm: TGlyphMetrics;
-  memDC: HDC;
-  oldFont: HFont;
-  tmpResult: TPaths;
-  tmp: TPaths;
-  offset: TPoint64;
-begin
-  len := length(text);
-  if (len = 0) or (trueTypeFont = 0) then exit;
-  SetLength(gma, len);
-  offset := Point64(x, y);
-  memDC := CreateCompatibleDC(0);
-  if memDC = 0 then exit;
-  oldFont := windows.SelectObject(memDC, trueTypeFont);
-  try
-    for i := 1 to len do
-    begin
-      tmp := GetCharInfoInternal(memDC, text[i], gm, offset);
-      gma[i-1] := gm;
-      AppendPaths(tmpResult, tmp);
-      inc(offset.X, gm.gmCellIncX * fixed_mul);
-      inc(offset.Y, gm.gmCellIncY * fixed_mul);
-    end;
-  finally
-    windows.SelectObject(memDC, oldFont);
-    DeleteDC(memDC);
-  end;
-
-  len := length(tmpResult);
-  setLength(result, len);
-  for i := 0 to len -1 do
+  Result := nil;
+  size := GetGlyphOutline(memDC, cardinal(c),
+    GGO_GRAY8_BITMAP, metrics, 0, nil, vert_flip_mat2);
+  if (size = GDI_ERROR) or (size = 0) then
   begin
-    len2 := length(tmpResult[i]);
-    setLength(result[i], len2);
-    for j := 0 to len -1 do
-    begin
-      result[i][j].X := tmpResult[i][j].X * div_Fixed;
-      result[i][j].Y := tmpResult[i][j].Y * div_Fixed;
-    end;
+    if (size = GDI_ERROR) then FillChar(metrics, SizeOf(metrics), 0);
+    Exit;
   end;
+
+  Result := TImage32.Create(metrics.gmBlackBoxX, metrics.gmBlackBoxY);
+  SetLength(bytes, size);
+  GetGlyphOutline(memDC, cardinal(c), GGO_GRAY8_BITMAP,
+    metrics, size, @bytes[0], vert_flip_mat2);
+
+  i := metrics.gmBlackBoxX mod 4;
+  if i > 0 then i := 4 - i;
+  pb := @bytes[0];
+  pc := PARGB(Result.PixelBase);
+  for h := 0 to metrics.gmBlackBoxY -1 do
+  begin
+    for w := 0 to metrics.gmBlackBoxX -1 do
+    begin
+      pc.A := scale64To255[pb^];
+      inc(pb); inc(pc);
+    end;
+    for w := 1 to i do inc(pb); //dword aligned
+  end;
+end;
+
+//------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+
+procedure MakeScaleTable;
+var
+  i: integer;
+begin
+  for i := 0 to 64 do
+    scale64To255[i] := Round(i * 255 / 64)
 end;
 //------------------------------------------------------------------------------
 
-function GetCharInfos(s: string;
-  trueTypeFont: HFont; out metrics: TGlyphMetricsArray): TArrayOfPaths;
-var
-  i, len: integer;
-  memDC: HDC;
-  oldFont: HFont;
-const
-  offset: TPoint64 = (X: 0; Y:0);
-begin
-  result := nil;
-  if (trueTypeFont = 0) then exit;
-  len := length(s);
-  setLength(result, len);
-  setLength(metrics, len);
-  memDC := CreateCompatibleDC(0);
-  if memDC = 0 then exit;
-  oldFont := windows.SelectObject(memDC, trueTypeFont);
-  try
-    for i := 0 to len -1 do
-      result[i] := GetCharInfoInternal(memDC, s[i+1], metrics[i], offset);
-  finally
-    windows.SelectObject(memDC, oldFont);
-    DeleteDC(memDC);
-  end;
-end;
-//------------------------------------------------------------------------------
+initialization
+  MakeScaleTable;
 
 end.
 

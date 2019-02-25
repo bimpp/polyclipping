@@ -231,22 +231,21 @@ type
     property     Path: TPath read FPath;
   end;
 
-  //TPolyTree: Intended as a READ-ONLY data structure for closed paths that are
+  //TPolyTree: is intended as a READ-ONLY data structure for closed paths
   //returned by a clipping operation. While this structure is more complex than
   //the alternative TPaths structure, it does preserve path ownership (ie those
-  //paths that contain (own) other paths) which is useful to some users.
+  //paths that contain (own) other paths) which may be useful to some users.
   TPolyTree = class(TPolyPath)
   public
     constructor  Create; override;
   end;
 
+  //FLOATING POINT POLYGON COORDINATES (D suffix to indicate double precision)
 
-  //FLOATING POINT POLYGON COORDINATES (D suffixes indicate double precision)
-
-  //TClipperD - is a TClipper wrapper to manage floating point conversions.
+  //TClipperD: is a TClipper wrapper to manage floating point conversions.
   //Since all clipping is done using integer polygon coordinates to maintain
   //robustness, floating point coords must be converted to and from integer
-  //values. Also scaling is frequently required to achieve the needed precision.
+  //values. Also, scaling is often required to achieve a desired precision.
 
   TClipperD = class(TClipper)
   private
@@ -295,6 +294,9 @@ type
     Edge2  : PActive;
     Pt     : TPoint64;
   end;
+
+const
+  DefaultScale = 100;
 
 
 //OVERFLOWCHECKS OFF is a necessary workaround for a compiler bug that very
@@ -1260,10 +1262,10 @@ procedure TClipper.SetWindCountForClosedPathEdge(e: PActive);
 var
   e2: PActive;
 begin
-  //Wind counts generally refer to polygon regions not edges, so here an edge's
-  //WindCnt indicates the higher of the two wind counts of the regions touching
-  //the edge. (Note also that adjacent region wind counts only ever differ
-  //by one, and open paths have no meaningful wind directions or counts.)
+  //Wind counts refer to polygon regions not edges, so here an edge's WindCnt
+  //indicates the higher of the wind counts for the two regions touching the
+  //edge. (nb: Adjacent regions can only ever have their wind counts differ by
+  //one. Also, open paths have no meaningful wind directions or counts.)
 
   e2 := e.PrevInAEL;
   //find the nearest closed path edge of the same PolyType in AEL (heading left)
@@ -2633,74 +2635,6 @@ begin
 end;
 
 //------------------------------------------------------------------------------
-//  TClipperD methods
-//------------------------------------------------------------------------------
-
-constructor TClipperD.Create(scale: double);
-begin
-  inherited Create;
-  FScale := scale;
-end;
-//------------------------------------------------------------------------------
-
-procedure TClipperD.AddPath(const pathD: TPathD; polyType: TPathType = ptSubject;
-  isOpen: Boolean = false);
-var
-  p: TPath;
-begin
-  p := ScalePath(pathD, FScale, FScale);
-  Inherited AddPath(p, polyType, isOpen);
-end;
-//------------------------------------------------------------------------------
-
-procedure TClipperD.AddPaths(const pathsD: TPathsD; polyType: TPathType = ptSubject;
-  isOpen: Boolean = false);
-var
-  pp: TPaths;
-begin
-  pp := ScalePaths(pathsD, FScale, FScale);
-  Inherited AddPaths(pp, polyType, isOpen);
-end;
-//------------------------------------------------------------------------------
-
-function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
-  out closedPaths: TPathsD): Boolean;
-var
-  closedP: TPaths;
-begin
-  Result := inherited Execute(clipType, fillRule, closedP);
-  if not Result then Exit;
-  if FScale = 0 then FScale := 1;
-  closedPaths := ScalePathsD(closedP, FScale, FScale);
-end;
-//------------------------------------------------------------------------------
-
-function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
-  out closedPaths, openPaths: TPathsD): Boolean;
-var
-  closedP, openP: TPaths;
-begin
-  Result := inherited Execute(clipType, fillRule, closedP, openP);
-  if not Result then Exit;
-  if FScale = 0 then FScale := 1;
-  closedPaths := ScalePathsD(closedP, 1/FScale, 1/FScale);
-  openPaths := ScalePathsD(openP, 1/FScale, 1/FScale);
-end;
-//------------------------------------------------------------------------------
-
-function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
-  var polytree: TPolyTreeD; out openPaths: TPathsD): Boolean;
-var
-  openP: TPaths;
-begin
-  Result := inherited Execute(clipType, fillRule, TPolyTree(polytree), openP);
-  if not Result then Exit;
-  if FScale = 0 then FScale := 1;
-  polytree.SetScaling(FScale); //recursive
-  openPaths := ScalePathsD(openP, 1/FScale, 1/FScale);
-end;
-
-//------------------------------------------------------------------------------
 //  TPolyPath methods
 //------------------------------------------------------------------------------
 
@@ -2768,6 +2702,76 @@ begin
 end;
 
 //------------------------------------------------------------------------------
+//  TClipperD methods
+//------------------------------------------------------------------------------
+
+constructor TClipperD.Create(scale: double);
+begin
+  inherited Create;
+  FScale := scale;
+end;
+//------------------------------------------------------------------------------
+
+procedure TClipperD.AddPath(const pathD: TPathD; polyType: TPathType = ptSubject;
+  isOpen: Boolean = false);
+var
+  p: TPath;
+begin
+  if FScale = 0 then FScale := DefaultScale;
+  p := ScalePath(pathD, FScale, FScale);
+  Inherited AddPath(p, polyType, isOpen);
+end;
+//------------------------------------------------------------------------------
+
+procedure TClipperD.AddPaths(const pathsD: TPathsD; polyType: TPathType = ptSubject;
+  isOpen: Boolean = false);
+var
+  pp: TPaths;
+begin
+  if FScale = 0 then FScale := DefaultScale;
+  pp := ScalePaths(pathsD, FScale, FScale);
+  Inherited AddPaths(pp, polyType, isOpen);
+end;
+//------------------------------------------------------------------------------
+
+function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
+  out closedPaths: TPathsD): Boolean;
+var
+  closedP: TPaths;
+begin
+  Result := (FScale > 0) and
+    inherited Execute(clipType, fillRule, closedP);
+  if not Result then Exit;
+  closedPaths := ScalePathsD(closedP, 1/FScale, 1/FScale);
+end;
+//------------------------------------------------------------------------------
+
+function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
+  out closedPaths, openPaths: TPathsD): Boolean;
+var
+  closedP, openP: TPaths;
+begin
+  Result := (FScale > 0) and
+    inherited Execute(clipType, fillRule, closedP, openP);
+  if not Result then Exit;
+  closedPaths := ScalePathsD(closedP, 1/FScale, 1/FScale);
+  openPaths := ScalePathsD(openP, 1/FScale, 1/FScale);
+end;
+//------------------------------------------------------------------------------
+
+function TClipperD.Execute(clipType: TClipType; fillRule: TFillRule;
+  var polytree: TPolyTreeD; out openPaths: TPathsD): Boolean;
+var
+  openP: TPaths;
+begin
+  Result := (FScale > 0) and
+    inherited Execute(clipType, fillRule, TPolyTree(polytree), openP);
+  if not Result then Exit;
+  polytree.SetScaling(FScale); //recursive
+  openPaths := ScalePathsD(openP, 1/FScale, 1/FScale);
+end;
+
+//------------------------------------------------------------------------------
 // TPolyPathD methods
 //------------------------------------------------------------------------------
 
@@ -2815,7 +2819,7 @@ begin
 end;
 
 //------------------------------------------------------------------------------
-// Additional unit functions
+// Additional functions
 //------------------------------------------------------------------------------
 
 procedure AddPolyNodeToPaths(Poly: TPolyPath; var Paths: TPaths);
