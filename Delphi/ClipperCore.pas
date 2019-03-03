@@ -53,6 +53,7 @@ type
 
   TPathD = array of TPointD;
   TPathsD = array of TPathD;
+  TArrayOfPathsD = array of TPathsD;
 
   TRect64 = {$IFDEF UNICODE}record{$ELSE}object{$ENDIF}
   private
@@ -111,8 +112,10 @@ function Point64(const X, Y: Double): TPoint64; overload;
   {$IFDEF INLINING} inline; {$ENDIF}
 function PointD(const X, Y: Double): TPointD;
   {$IFDEF INLINING} inline; {$ENDIF}
-function Rect64(const left, top, right, bottom: Int64): TRect64;
-function RectD(const left, top, right, bottom: double): TRectD;
+function Rect64(const left, top, right, bottom: Int64): TRect64; overload;
+function Rect64(const recD: TRectD): TRect64; overload;
+function RectD(const left, top, right, bottom: double): TRectD; overload;
+function RectD(const rec64: TRect64): TRectD; overload;
 function GetBounds(const paths: TArrayOfPaths): TRect64; overload;
 function GetBounds(const paths: TPaths): TRect64; overload;
 function GetBounds(const paths: TPathsD): TRectD; overload;
@@ -133,6 +136,8 @@ function ScalePaths(const paths: TPathsD; sx, sy: double): TPaths; overload;
 function ScalePathsD(const paths: TPaths; sx, sy: double): TPathsD; overload;
 function ScalePathsD(const paths: TPathsD; sx, sy: double): TPathsD; overload;
 
+function OffsetPath(const path: TPath; dx, dy: Int64): TPath; overload;
+function OffsetPath(const path: TPathD; dx, dy: double): TPathD; overload;
 function OffsetPaths(const paths: TPaths; dx, dy: Int64): TPaths; overload;
 function OffsetPaths(const paths: TPathsD; dx, dy: double): TPathsD; overload;
 
@@ -153,6 +158,7 @@ function PathToString(const path: TPath): string; overload;
 function PathsToString(const paths: TPaths): string; overload;
 function PathToString(const path: TPathD): string; overload;
 function PathsToString(const paths: TPathsD): string; overload;
+procedure StringToFile(const str, filename: string);
 
 const
   nullRect64: TRect64 = (left:0; top: 0; right:0; Bottom: 0);
@@ -339,6 +345,44 @@ begin
       result[i][j].X := paths[i][j].X * sx;
       result[i][j].Y := paths[i][j].Y * sy;
     end;
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function OffsetPath(const path: TPath; dx, dy: Int64): TPath;
+var
+  i: integer;
+begin
+  if (dx = 0) and (dy = 0) then
+  begin
+    result := path; //nb: reference counted
+    Exit;
+  end;
+
+  setlength(result, length(path));
+  for i := 0 to high(path) do
+  begin
+    result[i].X := path[i].X + dx;
+    result[i].Y := path[i].Y + dy;
+  end;
+end;
+//------------------------------------------------------------------------------
+
+function OffsetPath(const path: TPathD; dx, dy: double): TPathD;
+var
+  i: integer;
+begin
+  if (dx = 0) and (dy = 0) then
+  begin
+    result := path; //nb: reference counted
+    Exit;
+  end;
+
+  setlength(result, length(path));
+  for i := 0 to high(path) do
+  begin
+    result[i].X := path[i].X + dx;
+    result[i].Y := path[i].Y + dy;
   end;
 end;
 //------------------------------------------------------------------------------
@@ -544,19 +588,37 @@ end;
 
 function Rect64(const left, top, right, bottom: Int64): TRect64;
 begin
-  Result.Left := left;
-  Result.Top := top;
-  Result.Right := right;
+  Result.Left   := left;
+  Result.Top    := top;
+  Result.Right  := right;
   Result.Bottom := bottom;
+end;
+//------------------------------------------------------------------------------
+
+function Rect64(const recD: TRectD): TRect64;
+begin
+  Result.Left   := Floor(recD.left);
+  Result.Top    := Floor(recD.top);
+  Result.Right  := Ceil(recD.right);
+  Result.Bottom := Ceil(recD.bottom);
 end;
 //------------------------------------------------------------------------------
 
 function RectD(const left, top, right, bottom: double): TRectD;
 begin
-  Result.Left := left;
-  Result.Top := top;
-  Result.Right := right;
+  Result.Left   := left;
+  Result.Top    := top;
+  Result.Right  := right;
   Result.Bottom := bottom;
+end;
+//------------------------------------------------------------------------------
+
+function RectD(const rec64: TRect64): TRectD; overload;
+begin
+  Result.Left   := rec64.left;
+  Result.Top    := rec64.top;
+  Result.Right  := rec64.right;
+  Result.Bottom := rec64.bottom;
 end;
 //------------------------------------------------------------------------------
 
@@ -868,7 +930,7 @@ end;
 function PointDTosString(const pt: TPointD): string;
   {$IFDEF INLINING} inline; {$ENDIF}
 begin
-  result := format('%1.0f,%1.0f', [pt.X, pt.Y]);
+  result := format('%1.2f,%1.2f', [pt.X, pt.Y]);
 end;
 //------------------------------------------------------------------------------
 
@@ -895,8 +957,19 @@ begin
   for i := 0 to highI do
     result := result + PathToString(paths[i]) + #10#10;
 end;
-
 //------------------------------------------------------------------------------
+
+procedure StringToFile(const str, filename: string);
+begin
+  with TStringList.Create do
+  try
+    Text := str;
+    SaveToFile(filename);
+  finally
+    free;
+  end;
+end;
+
 //------------------------------------------------------------------------------
 
 

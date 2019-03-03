@@ -26,6 +26,7 @@ function GetCharPaths(memDC: HDC; c: Char;
   hinted: Boolean; out metrics: TGlyphMetrics): TPaths;
 
 function FixedToRect64(const rec: TRect64): TRect64;
+function FixedToRectD(const rec: TRect64): TRectD;
 function FixedToRect(const rec: TRect64): TRect;
 
 implementation
@@ -72,6 +73,15 @@ begin
   result.Top := rec.Top div $10000;
   result.Right := rec.Right div $10000 +1;
   result.Bottom := rec.Bottom div $10000 +1;
+end;
+//------------------------------------------------------------------------------
+
+function FixedToRectD(const rec: TRect64): TRectD;
+begin
+  result.Left := rec.Left / $10000;
+  result.Top := rec.Top / $10000;
+  result.Right := rec.Right / $10000;
+  result.Bottom := rec.Bottom / $10000;
 end;
 //------------------------------------------------------------------------------
 
