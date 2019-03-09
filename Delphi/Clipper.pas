@@ -2,8 +2,8 @@ unit Clipper;
 
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
-* Version   :  10.0 (beta)                                                     *
-* Date      :  19 Febuary 2019                                                 *
+* Version   :  10.0                                                            *
+* Date      :  9 March 2019                                                    *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  This is the main polygon clipping module                        *
@@ -54,7 +54,7 @@ type
   //edges that alternate between going up (relative to the Y-axis) and going
   //down. Edges consecutively going up or consecutively going down are called
   //'bounds' (or sides if they're simple polygons). 'Local Minima' refer to
-  //vertices where descending bounds become ascending bounds.
+  //vertices where descending bounds become ascending ones.
 
   PLocalMinima = ^TLocalMinima;
   TLocalMinima = record
@@ -69,12 +69,12 @@ type
     Pt       : TPoint64;
     Next     : TOutPt;
     Prev     : TOutPt;
-    OutRec   : TOutRec;       //only used in descendant classes
+    OutRec   : TOutRec;       //used in descendant classes
   end;
 
   PActive = ^TActive;
   TActive = record
-    op       : TOutPt;        //only used in descendant classes
+    op       : TOutPt;        //used in descendant classes
     Bot      : TPoint64;
     Top      : TPoint64;
     CurrX    : Int64;
@@ -97,6 +97,13 @@ type
     Jump     : PActive;       //for merge sorting (see BuildIntersectList())
     VertTop  : PVertex;
     LocMin   : PLocalMinima;  //the bottom of an edge 'bound' (also Vatti)
+  end;
+
+  PIntersectNode = ^TIntersectNode;
+  TIntersectNode = record
+    Edge1  : PActive;
+    Edge2  : PActive;
+    Pt     : TPoint64;
   end;
 
   PScanLine = ^TScanLine;
@@ -179,6 +186,8 @@ type
       IsNew: Boolean = false; orientationCheckRequired: Boolean = false);
     procedure AddLocalMaxPoly(e1, e2: PActive; const pt: TPoint64);
     procedure JoinOutrecPaths(e1, e2: PActive);
+    function GetIntersectNode(index: integer): PIntersectNode;
+      {$IFDEF INLINING} inline; {$ENDIF}
   protected
     procedure CleanUp; //unlike Clear, CleanUp preserves added paths
     function ExecuteInternal(clipType: TClipType;
@@ -186,6 +195,8 @@ type
     function BuildResult(out closedPaths, openPaths: TPaths): Boolean;
     function BuildResultTree(polyTree: TPolyTree; out openPaths: TPaths): Boolean;
     property OutRecList: TList read FOutRecList;
+    property IntersectNode[index: integer]: PIntersectNode
+      read GetIntersectNode;
   public
     constructor Create; virtual;
     destructor Destroy; override;
@@ -286,14 +297,6 @@ type
   function PolyTreeToPaths(PolyTree: TPolyTreeD): TPathsD; overload;
 
 implementation
-
-type
-  PIntersectNode = ^TIntersectNode;
-  TIntersectNode = record
-    Edge1  : PActive;
-    Edge2  : PActive;
-    Pt     : TPoint64;
-  end;
 
 const
   DefaultScale = 100;
@@ -1604,6 +1607,8 @@ begin
   op.Pt := pt;
   op.Prev := op;
   op.Next := op;
+
+  //nb: currently e1.NextInAEL == e2 but this could change immediately on return
 end;
 //------------------------------------------------------------------------------
 
@@ -1777,7 +1782,8 @@ procedure TClipper.IntersectEdges(e1, e2: PActive;
 var
   e1WindCnt, e2WindCnt, e1WindCnt2, e2WindCnt2: Integer;
 begin
-  //intersections with OPEN paths are managed differently to closed paths
+
+  //MANAGE OPEN PATH INTERSECTIONS SEPARATELY ...
   if FHasOpenPaths and (IsOpen(e1) or IsOpen(e2)) then
   begin
     if (IsOpen(e1) and IsOpen(e2) ) then Exit;
@@ -1802,8 +1808,8 @@ begin
     Exit;
   end;
 
-  //update winding counts...
-  //assumes that e1 will be to the right of e2 ABOVE the intersection
+  //UPDATE WINDING COUNTS...
+
   if IsSamePolyType(e1, e2) then
   begin
     if FFillRule = frEvenOdd then
@@ -1849,6 +1855,12 @@ begin
       end;
   end;
 
+  if (not IsHotEdge(e1) and not (e1WindCnt in [0,1])) or
+    (not IsHotEdge(e2) and not (e2WindCnt in [0,1])) then Exit;
+
+  //NOW PROCESS THE INTERSECTION ...
+
+  //if both edges are 'hot' ...
   if IsHotEdge(e1) and IsHotEdge(e2) then
   begin
     if not (e1WindCnt in [0,1]) or not (e2WindCnt in [0,1]) or
@@ -1866,26 +1878,22 @@ begin
       AddOutPt(e2, pt);
       SwapOutRecs(e1, e2);
     end;
-  end else if IsHotEdge(e1) then
+  end
+
+  //if one or other edge is 'hot' ...
+  else if IsHotEdge(e1) then
   begin
-    if (e2WindCnt = 0) or (e2WindCnt = 1) then
-    begin
-      AddOutPt(e1, pt);
-      SwapOutRecs(e1, e2);
-    end;
+    AddOutPt(e1, pt);
+    SwapOutRecs(e1, e2);
   end
   else if IsHotEdge(e2) then
   begin
-    if (e1WindCnt = 0) or (e1WindCnt = 1) then
-    begin
-      AddOutPt(e2, pt);
-      SwapOutRecs(e1, e2);
-    end;
+    AddOutPt(e2, pt);
+    SwapOutRecs(e1, e2);
   end
-  else if  ((e1WindCnt = 0) or (e1WindCnt = 1)) and
-    ((e2WindCnt = 0) or (e2WindCnt = 1)) then
+
+  else //neither edge is 'hot'
   begin
-    //neither Edge is currently contributing ...
     case FFillRule of
       frPositive:
       begin
@@ -1917,10 +1925,11 @@ begin
           if (e1WindCnt2 <= 0) and (e2WindCnt2 <= 0) then
             AddLocalMinPoly(e1, e2, pt, false, orientationCheckRequired);
         ctDifference:
-          if ((GetPolyType(e1) = ptClip) and (e1WindCnt2 > 0) and
-            (e2WindCnt2 > 0)) or ((GetPolyType(e1) = ptSubject) and
-            (e1WindCnt2 <= 0) and (e2WindCnt2 <= 0)) then
-              AddLocalMinPoly(e1, e2, pt, false, orientationCheckRequired);
+          if ((GetPolyType(e1) = ptClip) and
+                (e1WindCnt2 > 0) and (e2WindCnt2 > 0)) or
+              ((GetPolyType(e1) = ptSubject) and
+                (e1WindCnt2 <= 0) and (e2WindCnt2 <= 0)) then
+                  AddLocalMinPoly(e1, e2, pt, false, orientationCheckRequired);
         ctXor:
           AddLocalMinPoly(e1, e2, pt, false, orientationCheckRequired);
       end
@@ -2047,7 +2056,7 @@ var
   i: Integer;
 begin
   for i := 0 to FIntersectList.Count - 1 do
-    Dispose(PIntersectNode(FIntersectList[i]));
+    Dispose(IntersectNode[i]);
   FIntersectList.Clear;
 end;
 //------------------------------------------------------------------------------
@@ -2191,6 +2200,12 @@ begin
 end;
 //------------------------------------------------------------------------------
 
+function TClipper.GetIntersectNode(index: integer): PIntersectNode;
+begin
+  result := PIntersectNode(FIntersectList[index]);
+end;
+//------------------------------------------------------------------------------
+
 procedure TClipper.ProcessIntersectList;
 var
   i, j, highI: Integer;
@@ -2218,17 +2233,14 @@ begin
       FIntersectList[i] := FIntersectList[j];
       FIntersectList[j] := node;
     end;
-    node := FIntersectList[i];
-    with node^ do
-    begin
 
+    with IntersectNode[i]^ do
+    begin
       //Occasionally a non-minima intersection is processed before its own
       //minima. This causes problems with orientation so we need to flag it ...
-      if (i < highI) and
-        (PIntersectNode(FIntersectList[i+1]).Pt.Y > node.Pt.Y) then
+      if (i < highI) and (IntersectNode[i+1].Pt.Y > Pt.Y) then
           IntersectEdges(Edge1, Edge2, Pt, true) else
           IntersectEdges(Edge1, Edge2, Pt);
-
       SwapPositionsInAEL(Edge1, Edge2);
     end;
   end;

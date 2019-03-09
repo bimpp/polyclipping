@@ -3,7 +3,7 @@ unit ClipperCore;
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  19 Febuary 2019                                                 *
+* Date      :  9 March 2019                                                    *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Core Clipper Library module                                     *
@@ -86,12 +86,12 @@ type
   end;
 
   TClipType = (ctNone, ctIntersection, ctUnion, ctDifference, ctXor);
+  //Note: all clipping operations except for Difference are commutative.
   TPathType = (ptSubject, ptClip);
-  //By far the most widely used winding rules for polygon filling are EvenOdd
-  //and NonZero (see GDI, GDI+, XLib, OpenGL, Cairo, AGG, Quartz, SVG, Gr32).
-  //https://www.w3.org/TR/SVG/painting.html
+  //By far the most widely used filling rules for polygons are EvenOdd
+  //and NonZero, sometimes called Alternate and Winding respectively.
+  //https://en.wikipedia.org/wiki/Nonzero-rule
   TFillRule = (frEvenOdd, frNonZero, frPositive, frNegative);
-
   TPointInPolygonResult = (pipInside, pipOutside, pipOn);
 
   EClipperLibException = class(Exception);
@@ -144,7 +144,8 @@ function OffsetPaths(const paths: TPathsD; dx, dy: double): TPathsD; overload;
 function Paths(const paths: TPathsD): TPaths;
 function PathsD(const paths: TPaths): TPathsD;
 
-function ReversePath(const path: TPath): TPath;
+function ReversePath(const path: TPath): TPath; overload;
+function ReversePath(const path: TPathD): TPathD; overload;
 function ReversePaths(const paths: TPaths): TPaths; overload;
 function ReversePaths(const paths: TPathsD): TPathsD; overload;
 
@@ -227,8 +228,10 @@ begin
   while i < len do
     if PointsEqual(path[i], path[i-1]) then
     begin
-      Delete(path,i, 1);
       dec(len);
+      if (i < len) then
+        Move(path[i+1], path[i], (len-i)*SizeOf(TPoint64));
+      SetLength(path, len);
     end else
       inc(i);
 end;
@@ -243,8 +246,10 @@ begin
   while i < len do
     if PointsEqual(path[i], path[i-1]) then
     begin
-      Delete(path,i, 1);
       dec(len);
+      if (i < len) then
+        Move(path[i+1], path[i], (len-i)*SizeOf(TPointD));
+      SetLength(path, len);
     end else
       inc(i);
 end;
@@ -466,6 +471,17 @@ end;
 //------------------------------------------------------------------------------
 
 function ReversePath(const path: TPath): TPath;
+var
+  i, highI: Integer;
+begin
+  highI := high(path);
+  SetLength(Result, highI +1);
+  for i := 0 to highI do
+    Result[i] := path[highI - i];
+end;
+//------------------------------------------------------------------------------
+
+function ReversePath(const path: TPathD): TPathD;
 var
   i, highI: Integer;
 begin

@@ -3,7 +3,7 @@ unit ClipperOffset;
 (*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  8 Noveber 2017                                                  *
+* Date      :  9 March 2019                                                    *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2017                                         *
 * Purpose   :  Offset paths and clipping solutions                             *
@@ -73,7 +73,10 @@ type
   end;
 
   function ClipperOffsetPaths(const paths: TPaths;
-    delta: Double; jt: TJoinType; et: TEndType): TPaths;
+    delta: Double; jt: TJoinType; et: TEndType): TPaths; overload;
+
+  function ClipperOffsetPaths(const paths: TPathsD;
+    delta: Double; jt: TJoinType; et: TEndType): TPathsD; overload;
 
 implementation
 
@@ -484,8 +487,8 @@ begin
   try
     AddPaths(FSolution, ptSubject);
     if negate then
-      Execute(ctUnion, solution, frNegative) else
-      Execute(ctUnion, solution, frPositive);
+      Execute(ctUnion, frNegative, solution) else
+      Execute(ctUnion, frPositive, solution);
   finally
     free;
   end;
@@ -641,6 +644,23 @@ begin
   finally
     free;
   end;
+end;
+//------------------------------------------------------------------------------
+
+function ClipperOffsetPaths(const paths: TPathsD;
+  delta: Double; jt: TJoinType; et: TEndType): TPathsD;
+var
+  paths64, sol64: TPaths;
+begin
+  paths64 := ScalePaths(paths, 1000, 1000);
+  with TClipperOffset.Create do
+  try
+    AddPaths(paths64, jt, et);
+    Execute(sol64, delta*1000);
+  finally
+    free;
+  end;
+  Result := ScalePathsD(sol64, 0.001, 0.001);
 end;
 //------------------------------------------------------------------------------
 
