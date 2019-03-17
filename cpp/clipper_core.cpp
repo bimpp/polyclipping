@@ -1,7 +1,7 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  17 March 2019                                                   *
+* Date      :  18 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Core Clipper Library module                                     *
@@ -79,14 +79,16 @@ template <typename T>
 void Rect<T>::Intersect(const Rect<T> &rect) {
 	if (IsEmpty())
 		return;
-	else if (rect.IsEmpty())
+	else if (rect.IsEmpty()) {
 		*this = Rect();
-	left = std::max(rect.left, left);
-	right = std::min(rect.right, right);
-	top = std::max(rect.top, top);
-	bottom = std::min(rect.bottom, bottom);
-	if (IsEmpty())
-		*this = Rect();
+	} else {
+		left = std::max(rect.left, left);
+		right = std::min(rect.right, right);
+		top = std::max(rect.top, top);
+		bottom = std::min(rect.bottom, bottom);
+		if (IsEmpty())
+			*this = Rect();
+	}
 }
 //------------------------------------------------------------------------------
 
@@ -164,52 +166,50 @@ void Rect<T>::Union(const Rect<T> &rect) {
 //------------------------------------------------------------------------------
 
 PathI::Path(const PathI &other, double scale_x, double scale_y) {
-  if (scale_x == 0) scale_x = 1;
-  if (scale_y == 0) scale_y = 1;
-  if (scale_x == 1 && scale_y == 1) {
-    Append(other);
-  }
-  else {
-    data.reserve(other.size());
-    std::vector<PointI>::const_iterator it;
-    for (it = other.data.begin(); it != other.data.end(); it++)
-      data.push_back(PointI((cInt)round(it->x * scale_x), (cInt)round(it->y * scale_y)));
-  }
+	if (scale_x == 0) scale_x = 1;
+	if (scale_y == 0) scale_y = 1;
+	if (scale_x == 1 && scale_y == 1) {
+		Append(other);
+	} else {
+		data.reserve(other.size());
+		std::vector<PointI>::const_iterator it;
+		for (it = other.data.begin(); it != other.data.end(); it++)
+			data.push_back(PointI((cInt)round(it->x * scale_x), (cInt)round(it->y * scale_y)));
+	}
 }
 //------------------------------------------------------------------------------
 
 PathI::Path(const PathD &other, double scale_x, double scale_y) {
-  if (scale_x == 0) scale_x = 1;
-  if (scale_y == 0) scale_y = 1;
-  data.reserve(other.size());
-  std::vector<PointD>::const_iterator it;
-  for (it = other.data.begin(); it != other.data.end(); it++)
-    data.push_back(PointI((cInt)round(it->x * scale_x), (cInt)round(it->y * scale_y)));
+	if (scale_x == 0) scale_x = 1;
+	if (scale_y == 0) scale_y = 1;
+	data.reserve(other.size());
+	std::vector<PointD>::const_iterator it;
+	for (it = other.data.begin(); it != other.data.end(); it++)
+		data.push_back(PointI((cInt)round(it->x * scale_x), (cInt)round(it->y * scale_y)));
 }
 //------------------------------------------------------------------------------
 
 PathD::Path(const PathI &other, double scale_x, double scale_y) {
-  if (scale_x == 0) scale_x = 1;
-  if (scale_y == 0) scale_y = 1;
-  data.reserve(other.size());
-  std::vector<PointI>::const_iterator it;
-  for (it = other.data.begin(); it != other.data.end(); it++)
-    data.push_back(PointD(it->x * scale_x, it->y * scale_y));
+	if (scale_x == 0) scale_x = 1;
+	if (scale_y == 0) scale_y = 1;
+	data.reserve(other.size());
+	std::vector<PointI>::const_iterator it;
+	for (it = other.data.begin(); it != other.data.end(); it++)
+		data.push_back(PointD(it->x * scale_x, it->y * scale_y));
 }
 //------------------------------------------------------------------------------
 
 PathD::Path(const PathD &other, double scale_x, double scale_y) {
-  if (scale_x == 0) scale_x = 1;
-  if (scale_y == 0) scale_y = 1;
-  if (scale_x == 1 && scale_y == 1) {
-    Append(other);
-  }
-  else {
-    data.reserve(other.size());
-    std::vector<PointD>::const_iterator it;
-    for (it = other.data.begin(); it != other.data.end(); it++)
-      data.push_back(PointD(it->x * scale_x, it->y * scale_y));
-  }
+	if (scale_x == 0) scale_x = 1;
+	if (scale_y == 0) scale_y = 1;
+	if (scale_x == 1 && scale_y == 1) {
+		Append(other);
+	} else {
+		data.reserve(other.size());
+		std::vector<PointD>::const_iterator it;
+		for (it = other.data.begin(); it != other.data.end(); it++)
+			data.push_back(PointD(it->x * scale_x, it->y * scale_y));
+	}
 }
 //------------------------------------------------------------------------------
 
@@ -276,7 +276,7 @@ template <typename T>
 Rect<T> Path<T>::Bounds() const {
 	using namespace std;
 	const T _MAX = numeric_limits<T>::max();
-	const T _MIN = numeric_limits<T>::min();
+	const T _MIN = -_MAX;
 
 	Rect<T> bounds(_MAX, _MAX, _MIN, _MIN);
 
@@ -355,7 +355,7 @@ template <typename T>
 Rect<T> Paths<T>::Bounds() const {
 	using namespace std;
 	const T _MAX = numeric_limits<T>::max();
-	const T _MIN = numeric_limits<T>::min();
+	const T _MIN = -_MAX;
 
 	Rect<T> bounds(_MAX, _MAX, _MIN, _MIN);
 
@@ -427,7 +427,7 @@ template <typename T>
 Rect<T> PathsArray<T>::Bounds() const {
 	using namespace std;
 	const T _MAX = numeric_limits<T>::max();
-	const T _MIN = numeric_limits<T>::min();
+	const T _MIN = -_MAX;
 
 	Rect<T> bounds(_MAX, _MAX, _MIN, _MIN);
 
