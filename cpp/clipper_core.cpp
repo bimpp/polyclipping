@@ -110,11 +110,12 @@ void RectI::Rotate(double angle_rad) {
 	top = (cInt)floor(pts[0].y);
 	right = (cInt)ceil(pts[0].x);
 	bottom = (cInt)ceil(pts[0].y);
-	for (size_t i = 1; i < 4; ++i) {
-		if (pts[i].x < left) left = (cInt)floor(pts[i].x);
-		if (pts[i].y < top) top = (cInt)floor(pts[i].y);
-		if (pts[i].x > right) right = (cInt)ceil(pts[i].x);
-		if (pts[i].y > bottom) bottom = (cInt)ceil(pts[i].y);
+
+	for (const auto &p : pts.data) {
+		if (p.x < left) left = (cInt)floor(p.x);
+		if (p.y < top) top = (cInt)floor(p.y);
+		if (p.x > right) right = (cInt)ceil(p.x);
+		if (p.y > bottom) bottom = (cInt)ceil(p.y);
 	}
 }
 //------------------------------------------------------------------------------
@@ -138,11 +139,11 @@ void RectD::Rotate(double angle_rad) {
 	right = pts[0].x;
 	bottom = pts[0].y;
 
-	for (size_t i = 1; i < 4; ++i) {
-		if (pts[i].x < left) left = pts[i].x;
-		if (pts[i].y < top) top = pts[i].y;
-		if (pts[i].x > right) right = pts[i].x;
-		if (pts[i].y > bottom) bottom = pts[i].y;
+	for (const auto &point : pts.data) {
+		if (point.x < left) left = point.x;
+		if (point.y < top) top = point.y;
+		if (point.x > right) right = point.x;
+		if (point.y > bottom) bottom = point.y;
 	}
 }
 //------------------------------------------------------------------------------
@@ -172,9 +173,8 @@ PathI::Path(const PathI &other, double scale_x, double scale_y) {
 		Append(other);
 	} else {
 		data.reserve(other.size());
-		std::vector<PointI>::const_iterator it;
-		for (it = other.data.begin(); it != other.data.end(); it++)
-			data.push_back(PointI((cInt)round(it->x * scale_x), (cInt)round(it->y * scale_y)));
+		for (const auto &p : other.data)
+			data.push_back(PointI((cInt)round(p.x * scale_x), (cInt)round(p.y * scale_y)));
 	}
 }
 //------------------------------------------------------------------------------
@@ -183,9 +183,8 @@ PathI::Path(const PathD &other, double scale_x, double scale_y) {
 	if (scale_x == 0) scale_x = 1;
 	if (scale_y == 0) scale_y = 1;
 	data.reserve(other.size());
-	std::vector<PointD>::const_iterator it;
-	for (it = other.data.begin(); it != other.data.end(); it++)
-		data.push_back(PointI((cInt)round(it->x * scale_x), (cInt)round(it->y * scale_y)));
+	for (const auto &p : other.data)
+		data.push_back(PointI((cInt)round(p.x * scale_x), (cInt)round(p.y * scale_y)));
 }
 //------------------------------------------------------------------------------
 
@@ -193,9 +192,8 @@ PathD::Path(const PathI &other, double scale_x, double scale_y) {
 	if (scale_x == 0) scale_x = 1;
 	if (scale_y == 0) scale_y = 1;
 	data.reserve(other.size());
-	std::vector<PointI>::const_iterator it;
-	for (it = other.data.begin(); it != other.data.end(); it++)
-		data.push_back(PointD(it->x * scale_x, it->y * scale_y));
+	for (const auto &p : other.data)
+		data.push_back(PointD(p.x * scale_x, p.y * scale_y));
 }
 //------------------------------------------------------------------------------
 
@@ -206,29 +204,24 @@ PathD::Path(const PathD &other, double scale_x, double scale_y) {
 		Append(other);
 	} else {
 		data.reserve(other.size());
-		std::vector<PointD>::const_iterator it;
-		for (it = other.data.begin(); it != other.data.end(); it++)
-			data.push_back(PointD(it->x * scale_x, it->y * scale_y));
+		for (const auto &p : other.data)
+			data.push_back(PointD(p.x * scale_x, p.y * scale_y));
 	}
 }
 //------------------------------------------------------------------------------
 
 PathI &PathI::operator=(const PathD &other) {
 	data.clear();
-	using namespace std;
-	vector<PointD>::const_iterator it;
-	for (it = other.data.begin(); it != other.data.end(); it++)
-		data.push_back(PointI((cInt)round(it->x), (cInt)round(it->y)));
+	for (const auto &p : other.data)
+		data.push_back(PointI((cInt)round(p.x), (cInt)round(p.y)));
 	return *this;
 }
 //------------------------------------------------------------------------------
 
 PathD &PathD::operator=(const PathI &other) {
 	data.clear();
-	using namespace std;
-	vector<PointI>::const_iterator it;
-	for (it = other.data.begin(); it != other.data.end(); it++)
-		data.push_back(PointD((double)it->x, (double)it->y));
+	for (const auto &p : other.data)
+		data.push_back(PointD((double)p.x, (double)p.y));
 	return *this;
 }
 //------------------------------------------------------------------------------
@@ -253,17 +246,17 @@ PathD &PathD::operator=(const PathD &other) {
 
 template <typename T>
 void Path<T>::Append(const Path<T> &extra) {
-	data.insert(data.end(), extra.data.begin(), extra.data.end());
+	data.insert(end(data), begin(extra.data), end(extra.data));
 }
 //------------------------------------------------------------------------------
 
 template <typename T>
 double Path<T>::Area() const {
 	double area = 0.0;
-	size_t len = data.size() - 1;
+	auto len = data.size() - 1;
 	if (len < 3) return area;
-	int j = len - 1;
-	for (size_t i = 0; i < len; ++i) {
+	auto j = len - 1;
+	for (decltype(len) i = 0; i < len; ++i) {
 		double d = (double)(data[j].x + data[i].x);
 		area += d * (data[j].y - data[i].y);
 		j = i;
@@ -274,18 +267,16 @@ double Path<T>::Area() const {
 
 template <typename T>
 Rect<T> Path<T>::Bounds() const {
-	using namespace std;
-	const T _MAX = numeric_limits<T>::max();
+	const T _MAX = std::numeric_limits<T>::max();
 	const T _MIN = -_MAX;
 
 	Rect<T> bounds(_MAX, _MAX, _MIN, _MIN);
 
-	typename vector<Point<T> >::const_iterator it;
-	for (it = data.begin(); it != data.end(); it++) {
-		if (it->x < bounds.left) bounds.left = it->x;
-		if (it->x > bounds.right) bounds.right = it->x;
-		if (it->y < bounds.top) bounds.top = it->y;
-		if (it->y > bounds.bottom) bounds.bottom = it->y;
+	for (const auto &point : data) {
+		if (point.x < bounds.left) bounds.left = point.x;
+		if (point.x > bounds.right) bounds.right = point.x;
+		if (point.y < bounds.top) bounds.top = point.y;
+		if (point.y > bounds.bottom) bounds.bottom = point.y;
 	}
 
 	if (bounds.left >= bounds.right)
@@ -298,9 +289,9 @@ Rect<T> Path<T>::Bounds() const {
 template <typename T>
 void Path<T>::Offset(T dx, T dy) {
 	if (dx == 0 && dy == 0) return;
-	for (size_t i = 0; i < data.size(); ++i) {
-		data[i].x = data[i].x + dx;
-		data[i].y = data[i].y + dy;
+	for (auto &point : data) {
+		point.x += dx;
+		point.y += dy;
 	}
 }
 //------------------------------------------------------------------------------
@@ -313,7 +304,7 @@ bool Path<T>::Orientation() const {
 
 template <typename T>
 void Path<T>::Reverse() {
-	std::reverse(data.begin(), data.end());
+	std::reverse(begin(data), end(data));
 }
 //------------------------------------------------------------------------------
 
@@ -322,8 +313,8 @@ void Path<T>::Rotate(const PointD &center, double angle_rad) {
 	double cos_a = cos(angle_rad);
 	double sin_a = sin(angle_rad);
 
-	for (size_t i = 0; i < data.size(); ++i)
-		data[i].Rotate(center, sin_a, cos_a);
+	for (auto &point : data)
+		point.Rotate(center, sin_a, cos_a);
 }
 //------------------------------------------------------------------------------
 
@@ -333,9 +324,9 @@ void Path<T>::Scale(T sx, T sy) {
 	if (sy == 0) sy = 1;
 	if (sx == 1 && sy == 1) return;
 
-	for (size_t i = 0; i < data.size(); ++i) {
-		data[i].x = data[i].x * sx;
-		data[i].y = data[i].y * sy;
+	for (auto &point : data) {
+		point.x *= sx;
+		point.y *= sy;
 	}
 	StripDuplicates();
 }
@@ -343,7 +334,6 @@ void Path<T>::Scale(T sx, T sy) {
 
 template <typename T>
 void Path<T>::StripDuplicates() {
-	using namespace std;
 	data.erase(unique(begin(data), end(data)), end(data));
 }
 
@@ -353,21 +343,17 @@ void Path<T>::StripDuplicates() {
 
 template <typename T>
 Rect<T> Paths<T>::Bounds() const {
-	using namespace std;
-	const T _MAX = numeric_limits<T>::max();
+	const T _MAX = std::numeric_limits<T>::max();
 	const T _MIN = -_MAX;
 
 	Rect<T> bounds(_MAX, _MAX, _MIN, _MIN);
 
-	typename vector<Path<T> >::const_iterator it1;
-	typename vector<Point<T> >::const_iterator it2;
-
-	for (it1 = data.begin(); it1 != data.end(); it1++) {
-		for (it2 = it1->data.begin(); it2 != it1->data.end(); it2++) {
-			if (it2->x < bounds.left) bounds.left = it2->x;
-			if (it2->x > bounds.right) bounds.right = it2->x;
-			if (it2->y < bounds.top) bounds.top = it2->y;
-			if (it2->y > bounds.bottom) bounds.bottom = it2->y;
+	for (const auto &path : data) {
+		for (const auto &point : path.data) {
+			if (point.x < bounds.left) bounds.left = point.x;
+			if (point.x > bounds.right) bounds.right = point.x;
+			if (point.y < bounds.top) bounds.top = point.y;
+			if (point.y > bounds.bottom) bounds.bottom = point.y;
 		}
 	}
 
@@ -383,40 +369,40 @@ void Paths<T>::Rotate(const PointD &center, double angle_rad) {
 	double cos_a = cos(angle_rad);
 	double sin_a = sin(angle_rad);
 
-	for (size_t i = 0; i < data.size(); ++i)
-		for (size_t j = 0; i < data[i].size(); ++j)
-			data[i][j].Rotate(center, sin_a, cos_a);
+	for (auto &path : data)
+		for (auto &point : path.data)
+			point.Rotate(center, sin_a, cos_a);
 }
 //------------------------------------------------------------------------------
 
 template <typename T>
-void Paths<T>::Scale(T scale_x, T sy) {
-	for (size_t i = 0; i < data.size(); ++i)
-		data[i].Scale(scale_x, sy);
+void Paths<T>::Scale(T scale_x, T scale_y) {
+	for (auto &path : data)
+		path.Scale(scale_x, scale_y);
 }
 //------------------------------------------------------------------------------
 
 template <typename T>
 void Paths<T>::Offset(T dx, T dy) {
 	if (dx == 0 && dy == 0) return;
-	for (size_t i = 0; i < data.size(); ++i)
-		for (size_t j = 0; j < data[i].size(); ++j) {
-			data[i][j].x = data[i][j].x + dx;
-			data[i][j].y = data[i][j].y + dy;
+	for (auto &path : data)
+		for (auto &point : path.data) {
+			point.x += dx;
+			point.y += dy;
 		}
 }
 //------------------------------------------------------------------------------
 
 template <typename T>
 void Paths<T>::Reverse() {
-	for (size_t i = 0; i < data.size(); ++i)
-		data[i].Reverse();
+	for (auto &path : data)
+		path.Reverse();
 }
 //------------------------------------------------------------------------------
 
 template <typename T>
 void Paths<T>::Append(const Paths<T> &extra) {
-	data.insert(data.end(), extra.data.begin(), extra.data.end());
+	data.insert(end(data), begin(extra.data), end(extra.data));
 }
 
 //------------------------------------------------------------------------------
@@ -425,23 +411,18 @@ void Paths<T>::Append(const Paths<T> &extra) {
 
 template <typename T>
 Rect<T> PathsArray<T>::Bounds() const {
-	using namespace std;
-	const T _MAX = numeric_limits<T>::max();
+	const T _MAX = std::numeric_limits<T>::max();
 	const T _MIN = -_MAX;
 
 	Rect<T> bounds(_MAX, _MAX, _MIN, _MIN);
 
-	typename vector<Paths<T> >::const_iterator it1;
-	typename vector<Path<T> >::const_iterator it2;
-	typename vector<Point<T> >::const_iterator it3;
-
-	for (it1 = data.begin(); it1 != data.end(); it1++) {
-		for (it2 = it1->data.begin(); it2 != it1->data.end(); it2++) {
-			for (it3 = it2->data.begin(); it3 != it2->data.end(); it3++) {
-				if (it3->x < bounds.left) bounds.left = it3->x;
-				if (it3->x > bounds.right) bounds.right = it3->x;
-				if (it3->y < bounds.top) bounds.top = it3->y;
-				if (it3->y > bounds.bottom) bounds.bottom = it3->y;
+	for (const auto &paths : data) {
+		for (const auto &path : paths.data) {
+			for (const auto &point : path.data) {
+				if (point.x < bounds.left) bounds.left = point.x;
+				if (point.x > bounds.right) bounds.right = point.x;
+				if (point.y < bounds.top) bounds.top = point.y;
+				if (point.y > bounds.bottom) bounds.bottom = point.y;
 			}
 		}
 	}
@@ -458,7 +439,7 @@ Rect<T> PathsArray<T>::Bounds() const {
 
 PipResult PointInPolygon(const PointI &pt, const PathI &path) {
 	int val = 0;
-	size_t cnt = path.size();
+	auto cnt = path.size();
 	double d, d2, d3;  // using doubles to avoid possible integer overflow
 	PointI ip, ip_next;
 	PipResult result = pipOnEdge;
@@ -468,7 +449,7 @@ PipResult PointInPolygon(const PointI &pt, const PathI &path) {
 		return result;
 	}
 	ip = path[0];
-	for (size_t i = 1; i < cnt; ++i) {
+	for (decltype(cnt) i = 1; i < cnt; ++i) {
 		if (i < cnt)
 			ip_next = path[i];
 		else

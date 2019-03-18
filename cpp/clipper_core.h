@@ -1,7 +1,7 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  17 March 2019                                                   *
+* Date      :  18 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Core Clipper Library module                                     *
@@ -28,15 +28,15 @@ namespace clipperlib {
 
 //cInt could be defined as int here. While this would improve performance, it would
 //also limit coordinate values in clipping operations to approximately Sqrt(MaxInt)/2;
-typedef int64_t cInt;
+using cInt = int64_t;
 
 // Point -----------------------------------------------------------------------
 
 template <typename T>
 struct Point;
 
-typedef Point<cInt> PointI;
-typedef Point<double> PointD;
+using PointI = Point<cInt>;
+using PointD = Point<double>;
 
 template <typename T>
 struct Point {
@@ -51,7 +51,7 @@ struct Point {
     if (this != &other) {
       x = other.x;
       y = other.y;
-    }		
+    }
     return *this;
 	}
 
@@ -78,8 +78,8 @@ struct Point {
 template <typename T>
 struct Rect;
 
-typedef Rect<cInt> RectI;
-typedef Rect<double> RectD;
+using RectI = Rect<cInt>;
+using RectD = Rect<double>;
 
 template <typename T>
 struct Rect {
@@ -156,16 +156,18 @@ struct Rect {
 template <typename T>
 struct Path;
 
-typedef Path<cInt> PathI;
-typedef Path<double> PathD;
+using PathI = Path<cInt>;
+using PathD = Path<double>;
 
 template <typename T>
 struct Path {
 	std::vector<Point<T> > data;
 
-	size_t size() const { return data.size(); }
-	void resize(size_t size) { data.resize(size); }
-	void reserve(size_t size) { data.reserve(size); }
+	using Size = decltype(data.size());
+
+	Size size() const { return data.size(); }
+	void resize(Size size) { data.resize(size); }
+	void reserve(Size size) { data.reserve(size); }
 	void push_back(const Point<T> &point) { data.push_back(point); }
 	void clear() { data.clear(); }
 
@@ -173,8 +175,8 @@ struct Path {
 	Path(const PathI &other, double scale_x = 1.0, double scale_y = 1.0);
 	Path(const PathD &other, double scale_x = 1.0, double scale_y = 1.0);
 
-	Point<T> &operator[](size_t idx) { return data[idx]; }
-	const Point<T> &operator[](size_t idx) const { return data[idx]; }
+	Point<T> &operator[](Size idx) { return data[idx]; }
+	const Point<T> &operator[](Size idx) const { return data[idx]; }
 
 	Path &operator=(const PathI &other);
 	Path &operator=(const PathD &other);
@@ -197,9 +199,9 @@ struct Path {
 		if (path.data.empty())
 			return os;
 
-		size_t last = path.size() - 1;
+		Size last = path.size() - 1;
 
-		for (size_t i = 0; i < last; i++)
+		for (Size i = 0; i < last; i++)
 			os << "(" << path[i].x << "," << path[i].y << "), ";
 
 		os << "(" << path[last].x << "," << path[last].y << ")\n";
@@ -214,14 +216,16 @@ template <typename T>
 struct Paths {
 	std::vector<Path<T> > data;
 
-	size_t size() const { return data.size(); }
-	void resize(size_t size) { data.resize(size); }
-	void reserve(size_t size) { data.reserve(size); }
+	using Size = decltype(data.size());
+
+	Size size() const { return data.size(); }
+	void resize(Size size) { data.resize(size); }
+	void reserve(Size size) { data.reserve(size); }
 	void push_back(const Path<T> &path) { data.push_back(path); }
 	void clear() { data.clear(); }
 
-	Path<T> &operator[](size_t idx) { return data[idx]; }
-	const Path<T> &operator[](size_t idx) const { return data[idx]; }
+	Path<T> &operator[](Size idx) { return data[idx]; }
+	const Path<T> &operator[](Size idx) const { return data[idx]; }
 
 	void Append(const Paths<T> &extra);
 	Rect<T> Bounds() const;
@@ -234,17 +238,16 @@ struct Paths {
 		paths.data.push_back(path);
 		return paths;
 	}
-
 	friend std::ostream &operator<<(std::ostream &os, const Paths<T> &paths) {
-		for (size_t i = 0; i < paths.size(); i++)
+		for (Size i = 0; i < paths.size(); i++)
 			os << paths[i];
 		os << "\n";
 		return os;
 	}
 };
 
-typedef Paths<cInt> PathsI;
-typedef Paths<double> PathsD;
+using PathsI = Paths<cInt>;
+using PathsD = Paths<double>;
 
 // PathsArray ------------------------------------------------------------------
 
@@ -252,20 +255,22 @@ template <typename T>
 struct PathsArray {
 	std::vector<Paths<T> > data;
 
-	size_t size() const { return data.size(); }
-	void resize(size_t size) { data.resize(size); }
-	void reserve(size_t size) { data.reserve(size); }
+	using Size = decltype(data.size());
+
+	Size size() const { return data.size(); }
+	void resize(Size size) { data.resize(size); }
+	void reserve(Size size) { data.reserve(size); }
 	void push_back(const Paths<T> &paths) { data.push_back(paths); }
 	void clear() { data.clear(); }
 
-	Paths<T> &operator[](size_t idx) { return data[idx]; }
-	const Paths<T> &operator[](size_t idx) const { return data[idx]; }
+	Paths<T> &operator[](Size idx) { return data[idx]; }
+	const Paths<T> &operator[](Size idx) const { return data[idx]; }
 
 	Rect<T> Bounds() const;
 };
 
-typedef PathsArray<cInt> PathsArrayI;
-typedef PathsArray<double> PathsArrayD;
+using PathsArrayI = PathsArray<cInt>;
+using PathsArrayD = PathsArray<double>;
 
 // Miscellaneous ---------------------------------------------------------------
 
@@ -304,6 +309,6 @@ PipResult PointInPolygon(const PointI &pt, const PathI &path);
 
 double CrossProduct(const PointI &pt1, const PointI &pt2, const PointI &pt3);
 
-}  // namespace clipperlib
+} // namespace clipperlib
 
-#endif
+#endif // CLIPPER_CORE_H
