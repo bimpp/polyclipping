@@ -1,7 +1,7 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  18 March 2019                                                   *
+* Date      :  23 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Core Clipper Library module                                     *
@@ -14,7 +14,7 @@
 namespace clipperlib {
 
 //------------------------------------------------------------------------------
-// Init templates  ...
+// Template specialization declarations ...
 //------------------------------------------------------------------------------
 
 template struct Point<cInt>;
@@ -32,6 +32,7 @@ template struct PathsArray<double>;
 // Point
 //------------------------------------------------------------------------------
 
+template<>
 void PointI::Rotate(const PointD &center, double angle_rad) {
 	double tmp_x = x - center.x;
 	double tmp_y = y - center.y;
@@ -43,6 +44,7 @@ void PointI::Rotate(const PointD &center, double angle_rad) {
 }
 //------------------------------------------------------------------------------
 
+template<>
 void PointD::Rotate(const PointD &center, double angle_rad) {
 	double tmp_x = x - center.x;
 	double tmp_y = y - center.y;
@@ -54,6 +56,7 @@ void PointD::Rotate(const PointD &center, double angle_rad) {
 }
 //------------------------------------------------------------------------------
 
+template<>
 void PointI::Rotate(const PointD &center, double sin_a, double cos_a) {
 	double tmp_x = x - center.x;
 	double tmp_y = y - center.y;
@@ -63,6 +66,7 @@ void PointI::Rotate(const PointD &center, double sin_a, double cos_a) {
 }
 //------------------------------------------------------------------------------
 
+template<>
 void PointD::Rotate(const PointD &center, double sin_a, double cos_a) {
 	double tmp_x = x - center.x;
 	double tmp_y = y - center.y;
@@ -70,6 +74,15 @@ void PointD::Rotate(const PointD &center, double sin_a, double cos_a) {
 	x = tmp_x * cos_a - tmp_y * sin_a + center.x;
 	y = tmp_x * sin_a - tmp_y * cos_a + center.y;
 }
+//------------------------------------------------------------------------------
+
+template<typename T>
+inline void Point<T>::Rotate(const PointD & center, double angle_rad){}
+//------------------------------------------------------------------------------
+
+template<typename T>
+void clipperlib::Point<T>::Rotate(const PointD & center, 
+  double sin_a, double cos_a){}
 
 //------------------------------------------------------------------------------
 // Rect
@@ -148,6 +161,10 @@ void RectD::Rotate(double angle_rad) {
 }
 //------------------------------------------------------------------------------
 
+template<typename T>
+inline void Rect<T>::Rotate(double angle_rad) {}
+//------------------------------------------------------------------------------
+
 template <typename T>
 void Rect<T>::Union(const Rect<T> &rect) {
 	if (rect.IsEmpty())
@@ -166,88 +183,127 @@ void Rect<T>::Union(const Rect<T> &rect) {
 // Path
 //------------------------------------------------------------------------------
 
-PathI::Path(const PathI &other, double scale_x, double scale_y) {
-	if (scale_x == 0) scale_x = 1;
-	if (scale_y == 0) scale_y = 1;
-	if (scale_x == 1 && scale_y == 1) {
+template <>
+PathI::Path(const PathI &other, double scale) {
+	if (scale == 0) scale = 1;
+	if (scale == 1) {
 		Append(other);
 	} else {
 		data.reserve(other.size());
 		for (const auto &p : other.data)
-			data.push_back(PointI((cInt)round(p.x * scale_x), (cInt)round(p.y * scale_y)));
+			data.push_back(PointI((cInt)round(p.x * scale), (cInt)round(p.y * scale)));
 	}
 }
 //------------------------------------------------------------------------------
 
-PathI::Path(const PathD &other, double scale_x, double scale_y) {
-	if (scale_x == 0) scale_x = 1;
-	if (scale_y == 0) scale_y = 1;
+template <>
+PathI::Path(const PathD &other, double scale) {
+	if (scale == 0) scale = 1;
 	data.reserve(other.size());
 	for (const auto &p : other.data)
-		data.push_back(PointI((cInt)round(p.x * scale_x), (cInt)round(p.y * scale_y)));
+		data.push_back(PointI((cInt)round(p.x * scale), (cInt)round(p.y * scale)));
 }
 //------------------------------------------------------------------------------
 
-PathD::Path(const PathI &other, double scale_x, double scale_y) {
-	if (scale_x == 0) scale_x = 1;
-	if (scale_y == 0) scale_y = 1;
+template <>
+PathD::Path(const PathI &other, double scale) {
+	if (scale == 0) scale = 1;
 	data.reserve(other.size());
 	for (const auto &p : other.data)
-		data.push_back(PointD(p.x * scale_x, p.y * scale_y));
+		data.push_back(PointD(p.x * scale, p.y * scale));
 }
 //------------------------------------------------------------------------------
 
-PathD::Path(const PathD &other, double scale_x, double scale_y) {
-	if (scale_x == 0) scale_x = 1;
-	if (scale_y == 0) scale_y = 1;
-	if (scale_x == 1 && scale_y == 1) {
+template <>
+PathD::Path(const PathD &other, double scale) {
+	if (scale == 0) scale = 1;
+	if (scale == 1) {
 		Append(other);
 	} else {
 		data.reserve(other.size());
 		for (const auto &p : other.data)
-			data.push_back(PointD(p.x * scale_x, p.y * scale_y));
+			data.push_back(PointD(p.x * scale, p.y * scale));
 	}
 }
 //------------------------------------------------------------------------------
 
-PathI &PathI::operator=(const PathD &other) {
-	data.clear();
-	for (const auto &p : other.data)
-		data.push_back(PointI((cInt)round(p.x), (cInt)round(p.y)));
-	return *this;
-}
+template<typename T>
+clipperlib::Path<T>::Path(const PathI & other, double scale){}
 //------------------------------------------------------------------------------
 
-PathD &PathD::operator=(const PathI &other) {
-	data.clear();
-	for (const auto &p : other.data)
-		data.push_back(PointD((double)p.x, (double)p.y));
-	return *this;
-}
-//------------------------------------------------------------------------------
-
-PathI &PathI::operator=(const PathI &other) {
-	if (this != &other) {
-		data.clear();
-		Append(other);
-	}
-	return *this;
-}
-//------------------------------------------------------------------------------
-
-PathD &PathD::operator=(const PathD &other) {
-	if (this != &other) {
-		data.clear();
-		Append(other);
-	}
-	return *this;
-}
+template<typename T>
+clipperlib::Path<T>::Path(const PathD & other, double scale){}
 //------------------------------------------------------------------------------
 
 template <typename T>
 void Path<T>::Append(const Path<T> &extra) {
-	data.insert(end(data), begin(extra.data), end(extra.data));
+  if (extra.size() > 0)
+    data.insert(end(data), begin(extra.data), end(extra.data));
 }
+//------------------------------------------------------------------------------
+
+template <>
+void PathI::Assign(const PathI &other, double scale) {
+  if (&other == this)
+    throw ClipperLibException("Can't assign self to self in Path<T>::Assign.");
+  data.clear();
+	if (scale == 0.0 || scale == 1.0) {
+    Append(other);
+  } else {
+		data.reserve(other.size());
+		for (const auto &p : other.data)
+			data.push_back(PointI((cInt)round(p.x * scale), (cInt)round(p.y * scale)));
+	}
+}
+//------------------------------------------------------------------------------
+
+template <>
+void PathD::Assign(const PathI &other, double scale) {
+	data.clear();
+	if (scale == 0.0 || scale == 1.0) {
+    Append(other);
+  } else {
+		data.reserve(other.size());
+		for (const auto &p : other.data)
+			data.push_back(PointD((double)p.x * scale, (double)p.y * scale));
+	}
+}
+//------------------------------------------------------------------------------
+
+template <>
+void PathI::Assign(const PathD &other, double scale) {
+	data.clear();
+	if (scale == 0.0 || scale == 1.0) {
+    Append(other);
+  } else {
+		data.reserve(other.size());
+		for (const auto &p : other.data)
+			data.push_back(PointI((cInt)round(p.x * scale), (cInt)round(p.y * scale)));
+	}
+}
+//------------------------------------------------------------------------------
+
+template <>
+void PathD::Assign(const PathD &other, double scale) {
+  if (&other == this)
+    throw ClipperLibException("Can't assign self to self in Path<T>::Assign.");
+  data.clear();
+	if (scale == 0.0 || scale == 1.0) {
+    Append(other);
+  } else {
+		data.reserve(other.size());
+		for (const auto &p : other.data)
+			data.push_back(PointD(p.x * scale, p.y * scale));
+	}
+}
+//------------------------------------------------------------------------------
+
+template<typename T>
+void clipperlib::Path<T>::Assign(const PathI & other, double scale){}
+//------------------------------------------------------------------------------
+
+template<typename T>
+void clipperlib::Path<T>::Assign(const PathD & other, double scale){}
 //------------------------------------------------------------------------------
 
 template <typename T>
@@ -341,6 +397,101 @@ void Path<T>::StripDuplicates() {
 // Paths
 //------------------------------------------------------------------------------
 
+template <>
+PathsI::Paths(const PathsI &other, double scale) {
+  Assign(other, scale);
+}
+//------------------------------------------------------------------------------
+
+template <>
+PathsD::Paths(const PathsI &other, double scale) {
+  Assign(other, scale);
+}
+//------------------------------------------------------------------------------
+
+template <>
+PathsI::Paths(const PathsD &other, double scale) {
+  Assign(other, scale);
+}
+//------------------------------------------------------------------------------
+
+template <>
+PathsD::Paths(const PathsD &other, double scale) {
+  Assign(other, scale);
+}
+//------------------------------------------------------------------------------
+
+template<typename T>
+clipperlib::Paths<T>::Paths(const PathsI & other, double scale){}
+//------------------------------------------------------------------------------
+
+template<typename T>
+clipperlib::Paths<T>::Paths(const PathsD & other, double scale){}
+//------------------------------------------------------------------------------
+
+template <typename T>
+void Paths<T>::Append(const Paths<T> &extra) {
+  if (extra.size() > 0)
+    data.insert(end(data), begin(extra.data), end(extra.data));
+}
+//------------------------------------------------------------------------------
+
+template <>
+void PathsI::Assign(const PathsI &other, double scale) {
+	using namespace std;
+	data.clear();
+	data.resize(other.data.size());
+	typename vector<PathI>::iterator it1;
+	typename vector<PathI>::const_iterator it2;
+	for (it1 = data.begin(), it2 = other.data.begin(); it1 != data.end(); it1++, it2++)
+		it1->Assign(*it2, scale);
+}
+//------------------------------------------------------------------------------
+
+template <>
+void PathsD::Assign(const PathsI &other, double scale) {
+	using namespace std;
+	data.clear();
+	data.resize(other.data.size());
+	typename vector<PathD>::iterator it1;
+	typename vector<PathI>::const_iterator it2;
+	for (it1 = data.begin(), it2 = other.data.begin(); it1 != data.end(); it1++, it2++)
+		it1->Assign(*it2, scale);
+}
+//------------------------------------------------------------------------------
+
+template <>
+void PathsI::Assign(const PathsD &other, double scale) {
+	using namespace std;
+	data.clear();
+	data.resize(other.data.size());
+	typename vector<PathI>::iterator it1;
+	typename vector<PathD>::const_iterator it2;
+	for (it1 = data.begin(), it2 = other.data.begin(); it1 != data.end(); it1++, it2++)
+		it1->Assign(*it2, scale);
+}
+//------------------------------------------------------------------------------
+
+template <>
+void PathsD::Assign(const PathsD &other, double scale) {
+	using namespace std;
+	data.clear();
+	data.resize(other.data.size());
+	typename vector<PathD>::iterator it1;
+	typename vector<PathD>::const_iterator it2;
+	for (it1 = data.begin(), it2 = other.data.begin(); it1 != data.end(); it1++, it2++)
+		it1->Assign(*it2, scale);
+}
+//------------------------------------------------------------------------------
+
+template<typename T>
+void clipperlib::Paths<T>::Assign(const PathsI & other, double scale){}
+//------------------------------------------------------------------------------
+
+template<typename T>
+void clipperlib::Paths<T>::Assign(const PathsD & other, double scale){}
+//------------------------------------------------------------------------------
+
 template <typename T>
 Rect<T> Paths<T>::Bounds() const {
 	const T _MAX = std::numeric_limits<T>::max();
@@ -397,12 +548,6 @@ template <typename T>
 void Paths<T>::Reverse() {
 	for (auto &path : data)
 		path.Reverse();
-}
-//------------------------------------------------------------------------------
-
-template <typename T>
-void Paths<T>::Append(const Paths<T> &extra) {
-	data.insert(end(data), begin(extra.data), end(extra.data));
 }
 
 //------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  18 March 2019                                                   *
+* Date      :  23 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Core Clipper Library module                                     *
@@ -48,15 +48,13 @@ struct Point {
 		y(y){};
 
 	Point &operator=(const Point &other) {
-    if (this != &other) {
-      x = other.x;
-      y = other.y;
-    }
+    x = other.x;
+    y = other.y;
     return *this;
 	}
 
-	void Rotate(const PointD &center, double angle_rad);
-	void Rotate(const PointD &center, double sin_a, double cos_a);
+  void Rotate(const PointD &center, double angle_rad);
+  void Rotate(const PointD &center, double sin_a, double cos_a);
 
 	friend inline bool operator==(const Point &a, const Point &b) {
 		return a.x == b.x && a.y == b.y;
@@ -155,7 +153,6 @@ struct Rect {
 
 template <typename T>
 struct Path;
-
 using PathI = Path<cInt>;
 using PathD = Path<double>;
 
@@ -164,7 +161,6 @@ struct Path {
 	std::vector<Point<T> > data;
 
 	using Size = decltype(data.size());
-
 	Size size() const { return data.size(); }
 	void resize(Size size) { data.resize(size); }
 	void reserve(Size size) { data.reserve(size); }
@@ -172,17 +168,18 @@ struct Path {
 	void clear() { data.clear(); }
 
 	Path() {}
-	Path(const PathI &other, double scale_x = 1.0, double scale_y = 1.0);
-	Path(const PathD &other, double scale_x = 1.0, double scale_y = 1.0);
+	Path(const PathI &other, double scale = 1.0);
+	Path(const PathD &other, double scale = 1.0);
 
 	Point<T> &operator[](Size idx) { return data[idx]; }
 	const Point<T> &operator[](Size idx) const { return data[idx]; }
 
-	Path &operator=(const PathI &other);
-	Path &operator=(const PathD &other);
+  void Append(const Path<T> &extra);
+  double Area() const;
 
-	void Append(const Path<T> &extra);
-	double Area() const;
+  void Assign(const PathI &other, double scale = 1.0);
+  void Assign(const PathD &other, double scale = 1.0);
+
 	Rect<T> Bounds() const;
 	void Offset(T dx, T dy);
 	bool Orientation() const;
@@ -213,11 +210,15 @@ struct Path {
 // Paths -----------------------------------------------------------------------
 
 template <typename T>
+struct Paths;
+using PathsI = Paths<cInt>;
+using PathsD = Paths<double>;
+
+template <typename T>
 struct Paths {
 	std::vector<Path<T> > data;
 
 	using Size = decltype(data.size());
-
 	Size size() const { return data.size(); }
 	void resize(Size size) { data.resize(size); }
 	void reserve(Size size) { data.reserve(size); }
@@ -227,8 +228,14 @@ struct Paths {
 	Path<T> &operator[](Size idx) { return data[idx]; }
 	const Path<T> &operator[](Size idx) const { return data[idx]; }
 
-	void Append(const Paths<T> &extra);
-	Rect<T> Bounds() const;
+  Paths() {}
+  Paths(const PathsI &other, double scale = 1.0);
+  Paths(const PathsD &other, double scale = 1.0);
+
+  void Append(const Paths<T> &extra);
+  void Assign(const PathsI &other, double scale = 1.0);
+  void Assign(const PathsD &other, double scale = 1.0);
+  Rect<T> Bounds() const;
 	void Offset(T dx, T dy);
 	void Reverse();
 	void Rotate(const PointD &center, double angle_rad);
@@ -245,9 +252,6 @@ struct Paths {
 		return os;
 	}
 };
-
-using PathsI = Paths<cInt>;
-using PathsD = Paths<double>;
 
 // PathsArray ------------------------------------------------------------------
 
@@ -271,6 +275,19 @@ struct PathsArray {
 
 using PathsArrayI = PathsArray<cInt>;
 using PathsArrayD = PathsArray<double>;
+
+// ClipperLibException ---------------------------------------------------------
+
+class ClipperLibException : public std::exception {
+public:
+  ClipperLibException(const char *description) :
+    m_descr(description) {}
+  virtual ~ClipperLibException() throw() {}
+  virtual const char *what() const throw() { return m_descr.c_str(); }
+
+private:
+  std::string m_descr;
+};
 
 // Miscellaneous ---------------------------------------------------------------
 
