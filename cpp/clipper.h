@@ -1,7 +1,7 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  23 March 2019                                                   *
+* Date      :  24 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2017                                         *
 * Purpose   :  Base clipping module                                            *
@@ -63,7 +63,7 @@ struct OutRec {
 	Active *front_e;
 	Active *back_e;
 	OutPt *pts;
-  PolyTreeI *PolyTree;
+	PolyTreeI *PolyTree;
 	OutRecState state;
 };
 
@@ -108,9 +108,9 @@ private:
 
 	cInt bot_y_;
 	double scale_;
-  bool has_open_paths_;
+	bool has_open_paths_;
 	bool minima_list_sorted_;
-  ClipType cliptype_;
+	ClipType cliptype_;
 	FillRule fillrule_;
 	Active *actives_;
 	Active *sel_;
@@ -140,7 +140,8 @@ private:
 	inline void TerminateHotOpen(Active &e);
 	inline void StartOpenPath(Active &e, const PointI pt);
 	inline void UpdateEdgeIntoAEL(Active *e);
-	virtual void IntersectEdges(Active &e1, Active &e2, const PointI pt, bool orientation_check_required = false);
+	virtual void IntersectEdges(Active &e1, Active &e2, 
+    const PointI pt, bool orientation_check_required = false);
 	inline void DeleteFromAEL(Active &e);
 	inline void AdjustCurrXAndCopyToSEL(const cInt top_y);
 	void DoIntersections(const cInt top_y);
@@ -149,35 +150,44 @@ private:
 	bool BuildIntersectList(const cInt top_y);
 	void ProcessIntersectList();
 	void SwapPositionsInAEL(Active &edge1, Active &edge2);
-  OutPt *AddOutPt(Active &e, const PointI pt);
-  void AddLocalMinPoly(Active &e1, Active &e2, const PointI pt, bool is_new = false, bool orientation_check_required = false);
-  void AddLocalMaxPoly(Active &e1, Active &e2, const PointI pt);
-  void DoHorizontal(Active &horz);
-	bool ResetHorzDirection(Active &horz, Active *max_pair, cInt &horz_left, cInt &horz_right);
+	OutPt *AddOutPt(Active &e, const PointI pt);
+	void AddLocalMinPoly(Active &e1, Active &e2, const PointI pt, 
+    bool is_new = false, bool orientation_check_required = false);
+	void AddLocalMaxPoly(Active &e1, Active &e2, const PointI pt);
+	void DoHorizontal(Active &horz);
+	bool ResetHorzDirection(Active &horz, Active *max_pair, 
+    cInt &horz_left, cInt &horz_right);
 	void DoTopOfScanbeam(const cInt top_y);
 	Active *DoMaxima(Active &e);
 	virtual OutPt *CreateOutPt();
 	virtual OutRec *CreateOutRec();
 	void JoinOutrecPaths(Active &e1, Active &e2);
+
 protected:
-  OutRecList outrec_list_;
-  void CleanUp();  //unlike Clear, CleanUp preserves added paths
+	OutRecList outrec_list_;
+	void CleanUp();  //unlike Clear, CleanUp preserves added paths
 	virtual void ExecuteInternal(ClipType ct, FillRule ft);
-  bool BuildResultI(PathsI &closed_paths, PathsI *open_paths);
-  bool BuildResultTreeI(PolyTreeI &polytree, PathsI *open_paths);
+	bool BuildResultI(PathsI &closed_paths, PathsI *open_paths);
+	bool BuildResultTreeI(PolyTreeI &polytree, PathsI *open_paths);
+
 public:
-  Clipper() {};
+	Clipper(){};
 	virtual ~Clipper();
 	void Clear();
 	virtual RectI GetBounds();
 
 	//ADDPATH & ADDPATHS METHODS ...
-  virtual void AddPath(const PathI &path, PathType polytype = ptSubject, bool is_open = false);
-  virtual void AddPaths(const PathsI &paths, PathType polytype = ptSubject, bool is_open = false);
+	virtual void AddPath(const PathI &path, 
+    PathType polytype = ptSubject, bool is_open = false);
+	virtual void AddPaths(const PathsI &paths, 
+    PathType polytype = ptSubject, bool is_open = false);
 	//EXECUTE METHODS ...
-  virtual bool Execute(ClipType clip_type, FillRule fill_rule, PathsI &closed_paths);
-  virtual bool Execute(ClipType clip_type, FillRule fill_rule, PathsI &closed_paths, PathsI &open_paths);
-  virtual bool Execute(ClipType clip_type, FillRule fill_rule, PolyTreeI &poly_tree, PathsI &open_paths);
+	virtual bool Execute(ClipType clip_type, 
+    FillRule fill_rule, PathsI &closed_paths);
+	virtual bool Execute(ClipType clip_type, 
+    FillRule fill_rule, PathsI &closed_paths, PathsI &open_paths);
+	virtual bool Execute(ClipType clip_type, 
+    FillRule fill_rule, PolyTreeI &poly_tree, PathsI &open_paths);
 };
 
 // Note: ClipperD: is a wrapper for ClipperI.
@@ -187,47 +197,56 @@ public:
 
 class ClipperD : public Clipper {
 private:
-  double scale_;
+	double scale_;
+
 protected:
-  bool BuildResultD(PathsD &closed_paths, PathsD *open_paths);
-  bool BuildResultTreeD(PolyTreeD &polytree, PathsD *open_paths);
+	bool BuildResultD(PathsD &closed_paths, PathsD *open_paths);
+	bool BuildResultTreeD(PolyTreeD &polytree, PathsD *open_paths);
+
 public:
-  ClipperD(double scale = 0);
-  //ADDPATH & ADDPATHS METHODS ...
-  virtual void AddPath(const PathD &path, PathType polytype = ptSubject, bool is_open = false);
-  virtual void AddPaths(const PathsD &paths, PathType polytype = ptSubject, bool is_open = false);
-  //EXECUTE METHODS ...
-  bool Execute(ClipType clip_type, FillRule fill_rule, PathsD &closed_paths);
-  bool Execute(ClipType clip_type, FillRule fill_rule, PathsD &closed_paths, PathsD &open_paths);
-  bool Execute(ClipType clip_type, FillRule fill_rule, PolyTreeD &poly_tree, PathsD &open_paths);
+	ClipperD(double scale = 0);
+	//ADDPATH & ADDPATHS METHODS ...
+	virtual void AddPath(const PathD &path, 
+    PathType polytype = ptSubject, bool is_open = false);
+	virtual void AddPaths(const PathsD &paths, 
+    PathType polytype = ptSubject, bool is_open = false);
+	//EXECUTE METHODS ...
+	bool Execute(ClipType clip_type, 
+    FillRule fill_rule, PathsD &closed_paths);
+	bool Execute(ClipType clip_type, 
+    FillRule fill_rule, PathsD &closed_paths, PathsD &open_paths);
+	bool Execute(ClipType clip_type, 
+    FillRule fill_rule, PolyTreeD &poly_tree, PathsD &open_paths);
 };
 
 // PolyTree --------------------------------------------------------------------
 
-//PolyTree: is intended as a READ-ONLY data structure for CLOSED paths returned 
-//by clipping operations. While this structure is more complex than the 
+//PolyTree: is intended as a READ-ONLY data structure for CLOSED paths returned
+//by clipping operations. While this structure is more complex than the
 //alternative Paths structure, it does preserve path 'ownership' - ie those
 //paths that contain (or own) other paths. This will be useful to some users.
 
 template <typename T>
 class PolyTree {
 private:
-  double scale_;
-  Path<T> path_;
+	double scale_;
+	Path<T> path_;
+
 protected:
-  PolyTree<T> *parent_;
-  std::vector<PolyTree *> childs_;
+	PolyTree<T> *parent_;
+	std::vector<PolyTree *> childs_;
+
 public:
-  PolyTree(double scale = 1.0); //only for root node
-  PolyTree(PolyTree<T> &parent, const clipperlib::Path<T> &path);
-  virtual ~PolyTree() {};
-  void Clear();
-  size_t ChildCount() const { return childs_.size(); }
-  PolyTree<T> &Child(unsigned index);
-  const PolyTree<T> *Parent() const { return parent_; };
-  const Path<T> &Path() const { return path_; };
-  bool IsHole() const;
-  void SetScale(double scale);
+	PolyTree(double scale = 1.0);  //only for root node
+	PolyTree(PolyTree<T> &parent, const clipperlib::Path<T> &path);
+	virtual ~PolyTree(){};
+	void Clear();
+	size_t ChildCount() const { return childs_.size(); }
+	PolyTree<T> &Child(unsigned index);
+	const PolyTree<T> *Parent() const { return parent_; };
+	const Path<T> &Path() const { return path_; };
+	bool IsHole() const;
+	void SetScale(double scale);
 };
 
 //------------------------------------------------------------------------------

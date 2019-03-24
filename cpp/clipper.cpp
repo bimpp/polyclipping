@@ -1,7 +1,7 @@
  /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  23 March 2019                                                   *
+* Date      :  24 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2017                                         *
 * Purpose   :  Base clipping module                                            *
@@ -87,26 +87,8 @@ struct LocMinSorter {
 // miscellaneous functions ...
 //------------------------------------------------------------------------------
 
-inline cInt Round(double val) {
-	if ((val < 0))
-		return static_cast<cInt>(val - 0.5);
-	else
-		return static_cast<cInt>(val + 0.5);
-}
-//------------------------------------------------------------------------------
-
-inline double Abs(double val) {
-	return val < 0 ? -val : val;
-}
-//------------------------------------------------------------------------------
-
-inline int Abs(int val) {
-	return val < 0 ? -val : val;
-}
-//------------------------------------------------------------------------------
-
 inline bool IsOdd(int val) {
-	return val & 1 ? true : false;
+  return val & 1 ? true : false;
 }
 //------------------------------------------------------------------------------
 
@@ -202,7 +184,7 @@ inline cInt TopX(const Active &e, const cInt currentY) {
 	if ((currentY == e.top.y) || (e.top.x == e.bot.x))
 		return e.top.x;
 	else
-		return e.bot.x + Round(e.dx * (currentY - e.bot.y));
+		return e.bot.x + round(e.dx * (currentY - e.bot.y));
 }
 //------------------------------------------------------------------------------
 
@@ -215,7 +197,7 @@ inline cInt TopX(const PointI pt1, const PointI pt2, const cInt y) {
 		return pt2.x;
 	else {
 		double dx = GetDx(pt1, pt2);
-		return pt1.x + Round(dx * (y - pt1.y));
+		return pt1.x + round(dx * (y - pt1.y));
 	}
 }
 //------------------------------------------------------------------------------
@@ -259,18 +241,18 @@ PointI GetIntersectPoint(const Active &e1, const Active &e2) {
 	if (e1.dx == 0) {
 		if (IsHorizontal(e2)) return PointI(e1.bot.x, e2.bot.y);
 		b2 = e2.bot.y - (e2.bot.x / e2.dx);
-		return PointI(e1.bot.x, Round(e1.bot.x / e2.dx + b2));
+		return PointI(e1.bot.x, (cInt)round(e1.bot.x / e2.dx + b2));
 	} else if (e2.dx == 0) {
 		if (IsHorizontal(e1)) return PointI(e2.bot.x, e1.bot.y);
 		b1 = e1.bot.y - (e1.bot.x / e1.dx);
-		return PointI(e2.bot.x, Round(e2.bot.x / e1.dx + b1));
+		return PointI(e2.bot.x, (cInt)round(e2.bot.x / e1.dx + b1));
 	} else {
 		b1 = e1.bot.x - e1.bot.y * e1.dx;
 		b2 = e2.bot.x - e2.bot.y * e2.dx;
 		double q = (b2 - b1) / (e1.dx - e2.dx);
-		return (Abs(e1.dx) < Abs(e2.dx)) ?
-					   PointI(Round(e1.dx * q + b1), Round(q)) :
-					   PointI(Round(e2.dx * q + b2), Round(q));
+		return (abs(e1.dx) < abs(e2.dx)) ?
+			PointI(round(e1.dx * q + b1), round(q)) :
+			PointI(round(e2.dx * q + b2), round(q));
 	}
 }
 //------------------------------------------------------------------------------
@@ -605,10 +587,11 @@ void Clipper::Reset() {
 		std::sort(minima_list_.begin(), minima_list_.end(), LocMinSorter());
 		minima_list_sorted_ = true;
 	}
-	for (MinimaList::const_reverse_iterator i = minima_list_.rbegin(); i != minima_list_.rend(); ++i)
-		InsertScanline((*i)->vertex->pt.y);
-	curr_loc_min_ = minima_list_.begin();
+  MinimaList::const_reverse_iterator i;
+  for (i = minima_list_.rbegin(); i != minima_list_.rend(); ++i)
+    InsertScanline((*i)->vertex->pt.y);
 
+  curr_loc_min_ = minima_list_.begin();
 	actives_ = NULL;
 	sel_ = NULL;
 }
@@ -638,22 +621,20 @@ bool Clipper::PopLocalMinima(cInt y, LocalMinima *&local_minima) {
 //------------------------------------------------------------------------------
 
 void Clipper::DisposeAllOutRecs() {
-	for (OutRecList::const_iterator i = outrec_list_.begin(); i != outrec_list_.end(); ++i) {
-		if ((*i)->pts) DisposeOutPts((*i)->pts);
-		delete (*i);
-	}
-	outrec_list_.resize(0);
+  for (auto outrec :  outrec_list_) {
+    if (outrec->pts) DisposeOutPts(outrec->pts);
+    delete outrec;
+  }
+  outrec_list_.resize(0);
 }
 //------------------------------------------------------------------------------
 
 void Clipper::DisposeVerticesAndLocalMinima() {
-	for (MinimaList::iterator ml_iter = minima_list_.begin();
-			ml_iter != minima_list_.end(); ++ml_iter)
-		delete (*ml_iter);
-	minima_list_.clear();
-	VertexList::iterator vl_iter;
-	for (vl_iter = vertex_list_.begin(); vl_iter != vertex_list_.end(); ++vl_iter)
-		delete[](*vl_iter);
+  for (auto loc_min : minima_list_)
+    delete (loc_min);
+  minima_list_.clear();
+  for (auto vertex : vertex_list_)
+    delete[] vertex;
 	vertex_list_.clear();
 }
 //------------------------------------------------------------------------------
@@ -776,7 +757,7 @@ void Clipper::AddPaths(const PathsI &paths, PathType polytype, bool is_open) {
 bool Clipper::IsContributingClosed(const Active &e) const {
 	switch (fillrule_) {
 		case frNonZero:
-			if (Abs(e.wind_cnt) != 1) return false;
+			if (abs(e.wind_cnt) != 1) return false;
 			break;
 		case frPositive:
 			if (e.wind_cnt != 1) return false;
@@ -868,7 +849,7 @@ void Clipper::SetWindCountForClosedPathEdge(Active &e) {
 		//nb: neither e2.WindCnt nor e2.WindDx should ever be 0.
 		if (e2->wind_cnt * e2->wind_dx < 0) {
 			//opposite directions so 'e' is outside 'e2' ...
-			if (Abs(e2->wind_cnt) > 1) {
+			if (abs(e2->wind_cnt) > 1) {
 				//outside prev poly but still inside another.
 				if (e2->wind_dx * e.wind_dx < 0)
 					//reversing direction so use the same WC
@@ -1344,14 +1325,14 @@ void Clipper::IntersectEdges(Active &e1, Active &e2, const PointI pt, bool orien
 		switch (cliptype_) {
 			case ctIntersection:
 			case ctDifference:
-				if (IsSamePolyType(*edge_o, *edge_c) || (Abs(edge_c->wind_cnt) != 1)) return;
+				if (IsSamePolyType(*edge_o, *edge_c) || (abs(edge_c->wind_cnt) != 1)) return;
 				break;
 			case ctUnion:
-				if (IsHotEdge(*edge_o) != ((Abs(edge_c->wind_cnt) != 1) ||
+				if (IsHotEdge(*edge_o) != ((abs(edge_c->wind_cnt) != 1) ||
 												  (IsHotEdge(*edge_o) != (edge_c->wind_cnt != 0)))) return;  //just works!
 				break;
 			case ctXor:
-				if (Abs(edge_c->wind_cnt) != 1) return;
+				if (abs(edge_c->wind_cnt) != 1) return;
 				break;
 		}
 		//toggle contribution ...
@@ -1402,8 +1383,8 @@ void Clipper::IntersectEdges(Active &e1, Active &e2, const PointI pt, bool orien
 			old_e2_windcnt = -e2.wind_cnt;
 			break;
 		default:
-			old_e1_windcnt = Abs(e1.wind_cnt);
-			old_e2_windcnt = Abs(e2.wind_cnt);
+			old_e1_windcnt = abs(e1.wind_cnt);
+			old_e2_windcnt = abs(e2.wind_cnt);
 			break;
 	}
 
@@ -1449,8 +1430,8 @@ void Clipper::IntersectEdges(Active &e1, Active &e2, const PointI pt, bool orien
 				e2Wc2 = -e2.wind_cnt2;
 				break;
 			default:
-				e1Wc2 = Abs(e1.wind_cnt2);
-				e2Wc2 = Abs(e2.wind_cnt2);
+				e1Wc2 = abs(e1.wind_cnt2);
+				e2Wc2 = abs(e2.wind_cnt2);
 				break;
 		}
 
@@ -1581,9 +1562,8 @@ void Clipper::DoIntersections(const cInt top_y) {
 //------------------------------------------------------------------------------
 
 inline void Clipper::DisposeIntersectNodes() {
-	for (IntersectList::iterator node_iter = intersect_list_.begin();
-			node_iter != intersect_list_.end(); ++node_iter)
-		delete (*node_iter);
+  for (auto intersect : intersect_list_)
+    delete intersect;
 	intersect_list_.resize(0);
 }
 //------------------------------------------------------------------------------
@@ -1591,13 +1571,13 @@ inline void Clipper::DisposeIntersectNodes() {
 void Clipper::AddNewIntersectNode(Active &e1, Active &e2, cInt top_y) {
 	PointI pt = GetIntersectPoint(e1, e2);
 
-	//Rounding errors can occasionally place the calculated intersection
+	//rounding errors can occasionally place the calculated intersection
 	//point either below or above the scanbeam, so check and correct ...
 	if (pt.y > bot_y_) {
 		//e.curr.y is still the bottom of scanbeam
 		pt.y = bot_y_;
 		//use the more vertical of the 2 edges to derive pt.x ...
-		if (Abs(e1.dx) < Abs(e2.dx))
+		if (abs(e1.dx) < abs(e2.dx))
 			pt.x = TopX(e1, bot_y_);
 		else
 			pt.x = TopX(e2, bot_y_);
@@ -1608,7 +1588,7 @@ void Clipper::AddNewIntersectNode(Active &e1, Active &e2, cInt top_y) {
 			pt.x = e1.top.x;
 		else if (e2.top.y == top_y)
 			pt.x = e2.top.x;
-		else if (Abs(e1.dx) < Abs(e2.dx))
+		else if (abs(e1.dx) < abs(e2.dx))
 			pt.x = e1.curr_x;
 		else
 			pt.x = e2.curr_x;
@@ -1716,10 +1696,9 @@ void Clipper::ProcessIntersectList() {
 
 	//First we do a quicksort so intersections proceed in a bottom up order ...
 	std::sort(intersect_list_.begin(), intersect_list_.end(), IntersectListSort);
-
 	//Now as we process these intersections, we must sometimes adjust the order
 	//to ensure that intersecting edges are always adjacent ...
-	for (size_t i = 0; i < intersect_list_.size(); ++i) {
+  for (size_t i = 0; i < intersect_list_.size(); ++i) {
 		if (!EdgesAdjacentInAEL(*intersect_list_[i])) {
 			size_t j = i + 1;
 			while (j < intersect_list_.size() && !EdgesAdjacentInAEL(*intersect_list_[j])) j++;
@@ -1730,16 +1709,9 @@ void Clipper::ProcessIntersectList() {
 		//Occasionally a non-minima intersection is processed before its own
 		//minima. This causes problems with orientation so we need to flag it ...
 		IntersectNode *node = intersect_list_[i];
-		IntersectNode *node_next = NULL;
-
-		if (i < intersect_list_.size() - 1) {
-			node_next = intersect_list_[i + 1];
-		}
-		if (node_next && node_next->pt.y > node->pt.y)
-			IntersectEdges(*node->edge1, *node->edge2, node->pt, true);
-		else
-			IntersectEdges(*node->edge1, *node->edge2, node->pt);
-
+    bool flagged = (i < intersect_list_.size() - 1) && 
+      (intersect_list_[i + 1]->pt.y > node->pt.y);
+		IntersectEdges(*node->edge1, *node->edge2, node->pt, flagged);
 		SwapPositionsInAEL(*node->edge1, *node->edge2);
 	}
 }
@@ -2288,9 +2260,9 @@ PolyTree<T>::PolyTree(PolyTree<T> &parent,
 
 template <typename T>
 void PolyTree<T>::Clear() {
-  for (size_t i = 0; i < childs_.size(); ++i) {
-    childs_[i]->Clear();
-    delete childs_[i];
+  for (auto  child : childs_) {
+    child->Clear();
+    delete child;
   }
   childs_.resize(0);
 }
