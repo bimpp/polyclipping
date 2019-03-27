@@ -1,7 +1,7 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  23 March 2019                                                   *
+* Date      :  24 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2019                                         *
 * Purpose   :  Core Clipper Library module                                     *
@@ -26,8 +26,9 @@
 
 namespace clipperlib {
 
-//cInt could be defined as int here. While this would improve performance, it would
-//also limit coordinate values in clipping operations to approximately Sqrt(MaxInt)/2;
+//cInt could be defined as int here. However, while this would improve
+//performance, it would also limit coordinate values in clipping operations to
+//a range approximating +/- Sqrt(MaxInt)/2;
 using cInt = int64_t;
 
 // Point -----------------------------------------------------------------------
@@ -44,23 +45,23 @@ struct Point {
 	T y;
 
 	Point(T x = 0, T y = 0) :
-		x(x),
-		y(y){};
+		x(x), 
+    y(y){};
 
 	Point &operator=(const Point &other) {
-    x = other.x;
-    y = other.y;
-    return *this;
+		x = other.x;
+		y = other.y;
+		return *this;
 	}
 
-  void Rotate(const PointD &center, double angle_rad);
-  void Rotate(const PointD &center, double sin_a, double cos_a);
+	void Rotate(const PointD &center, double angle_rad);
+	void Rotate(const PointD &center, double sin_a, double cos_a);
 
 	friend inline bool operator==(const Point &a, const Point &b) {
 		return a.x == b.x && a.y == b.y;
 	}
 	friend inline bool operator!=(const Point &a, const Point &b) {
-		return a.x != b.x || a.y != b.y;
+		return !(a == b);
 	}
 	friend inline bool operator<(const Point &a, const Point &b) {
 		return (a.x == b.x) ? (a.y < b.y) : (a.x < b.x);
@@ -174,11 +175,11 @@ struct Path {
 	Point<T> &operator[](Size idx) { return data[idx]; }
 	const Point<T> &operator[](Size idx) const { return data[idx]; }
 
-  void Append(const Path<T> &extra);
-  double Area() const;
+	void Append(const Path<T> &extra);
+	double Area() const;
 
-  void Assign(const PathI &other, double scale = 1.0);
-  void Assign(const PathD &other, double scale = 1.0);
+	void Assign(const PathI &other, double scale = 1.0);
+	void Assign(const PathD &other, double scale = 1.0);
 
 	Rect<T> Bounds() const;
 	void Offset(T dx, T dy);
@@ -228,14 +229,14 @@ struct Paths {
 	Path<T> &operator[](Size idx) { return data[idx]; }
 	const Path<T> &operator[](Size idx) const { return data[idx]; }
 
-  Paths() {}
-  Paths(const PathsI &other, double scale = 1.0);
-  Paths(const PathsD &other, double scale = 1.0);
+	Paths() {}
+	Paths(const PathsI &other, double scale = 1.0);
+	Paths(const PathsD &other, double scale = 1.0);
 
-  void Append(const Paths<T> &extra);
-  void Assign(const PathsI &other, double scale = 1.0);
-  void Assign(const PathsD &other, double scale = 1.0);
-  Rect<T> Bounds() const;
+	void Append(const Paths<T> &extra);
+	void Assign(const PathsI &other, double scale = 1.0);
+	void Assign(const PathsD &other, double scale = 1.0);
+	Rect<T> Bounds() const;
 	void Offset(T dx, T dy);
 	void Reverse();
 	void Rotate(const PointD &center, double angle_rad);
@@ -245,6 +246,7 @@ struct Paths {
 		paths.data.push_back(path);
 		return paths;
 	}
+
 	friend std::ostream &operator<<(std::ostream &os, const Paths<T> &paths) {
 		for (Size i = 0; i < paths.size(); i++)
 			os << paths[i];
@@ -280,13 +282,13 @@ using PathsArrayD = PathsArray<double>;
 
 class ClipperLibException : public std::exception {
 public:
-  ClipperLibException(const char *description) :
-    m_descr(description) {}
-  virtual ~ClipperLibException() throw() {}
-  virtual const char *what() const throw() { return m_descr.c_str(); }
+	ClipperLibException(const char *description) :
+		m_descr(description) {}
+	virtual ~ClipperLibException() throw() {}
+	virtual const char *what() const throw() { return m_descr.c_str(); }
 
 private:
-  std::string m_descr;
+	std::string m_descr;
 };
 
 // Miscellaneous ---------------------------------------------------------------
@@ -326,6 +328,6 @@ PipResult PointInPolygon(const PointI &pt, const PathI &path);
 
 double CrossProduct(const PointI &pt1, const PointI &pt2, const PointI &pt3);
 
-} // namespace clipperlib
+}  // namespace clipperlib
 
-#endif // CLIPPER_CORE_H
+#endif  // CLIPPER_CORE_H

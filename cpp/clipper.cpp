@@ -1,14 +1,13 @@
  /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  24 March 2019                                                   *
+* Date      :  27 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2017                                         *
 * Purpose   :  Base clipping module                                            *
 * License   : http://www.boost.org/LICENSE_1_0.txt                             *
 *******************************************************************************/
 
-#include "clipper.h"
 #include <stdlib.h>
 #include <algorithm>
 #include <cmath>
@@ -19,6 +18,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <vector>
+#include "clipper.h"
 
 namespace clipperlib {
 
@@ -184,7 +184,7 @@ inline cInt TopX(const Active &e, const cInt currentY) {
 	if ((currentY == e.top.y) || (e.top.x == e.bot.x))
 		return e.top.x;
 	else
-		return e.bot.x + round(e.dx * (currentY - e.bot.y));
+		return e.bot.x + (cInt)round(e.dx * (currentY - e.bot.y));
 }
 //------------------------------------------------------------------------------
 
@@ -197,7 +197,7 @@ inline cInt TopX(const PointI pt1, const PointI pt2, const cInt y) {
 		return pt2.x;
 	else {
 		double dx = GetDx(pt1, pt2);
-		return pt1.x + round(dx * (y - pt1.y));
+		return pt1.x + (cInt)round(dx * (y - pt1.y));
 	}
 }
 //------------------------------------------------------------------------------

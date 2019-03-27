@@ -1,7 +1,7 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
 * Version   :  10.0 (beta)                                                     *
-* Date      :  24 March 2019                                                   *
+* Date      :  27 March 2019                                                   *
 * Website   :  http://www.angusj.com                                           *
 * Copyright :  Angus Johnson 2010-2017                                         *
 * Purpose   :  Base clipping module                                            *
@@ -239,7 +239,7 @@ protected:
 public:
 	PolyTree(double scale = 1.0);  //only for root node
 	PolyTree(PolyTree<T> &parent, const clipperlib::Path<T> &path);
-	virtual ~PolyTree(){};
+	virtual ~PolyTree() { Clear(); };
 	void Clear();
 	size_t ChildCount() const { return childs_.size(); }
 	PolyTree<T> &Child(unsigned index);
